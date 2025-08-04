@@ -1,0 +1,21 @@
+[package]
+name = "graph_filesystem"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.19", features = ["derive"] }
+env_logger = "0.11.8"
+fuser = "0.15.1"
+libc = "0.2.174"
+log = "0.4.27"
+mount-watcher = "0.5.0"
+nix = "0.30.1"
+notify = "8.1.0"
+rustyline = "14.0.0"
+tempfile = "3.20.0"
+time = "0.3.41"
+tokio = { version = "1.46.1", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+whoami = "1.5.2"
