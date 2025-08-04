@@ -1,17 +1,16 @@
-use std::{error::Error, path::PathBuf, process::Command, thread::{self, JoinHandle}};
+use std::{error::Error, ffi::OsString, path::PathBuf, process::Command, thread::{self, JoinHandle}};
 
 use fuser::{mount2, MountOption};
 use tracing::{info, instrument};
 use mount_watcher::{MountWatcher, WatchControl};
 use tempfile::tempdir;
 
-use crate::{errors::Result_, filesystem::GraphFilesystem};
+use crate::{errors::Result_, filesystem::TagFilesystem};
+
+type FusePayload = (PathBuf, JoinHandle<Result<(), std::io::Error>>);
 
 #[instrument]
-pub fn fuse_setup() -> Result<
-    (PathBuf, JoinHandle<Result<(), std::io::Error>>),
-    Box<(dyn Error + 'static)>
-> {
+pub fn fuse_setup() -> Result<FusePayload, Box<(dyn Error + 'static)>> {
     let x = tempdir()?;
     let temporary_directory = x
         .path()
@@ -39,8 +38,12 @@ pub fn fuse_setup() -> Result<
     let mount_handle = thread::spawn(move || {
         info!("Mounting at `{temporary_directory_:?}`.");
         mount2(
-            GraphFilesystem::new_test(),&temporary_directory_,
-            &[MountOption::CUSTOM(String::from("-o user"))]
+            TagFilesystem::new(), &temporary_directory_,
+            &[
+                MountOption::AutoUnmount,
+                MountOption::AllowRoot,
+                MountOption::CUSTOM(String::from("-o user"))
+            ]
         )
     });
 
@@ -52,15 +55,22 @@ pub fn fuse_setup() -> Result<
     Ok((temporary_directory, mount_handle))
 }
 
+pub fn fuse_cleanup(
+    setup_payload: FusePayload,
+    to_do: impl FnOnce(&FusePayload) -> Result_<()>
+)-> Result_<()> {
+    _ = to_do(&setup_payload); 
+    fuse_cleanup_(setup_payload)
+}
+
 #[instrument]
-pub fn fuse_cleanup(setup_payload: (PathBuf, JoinHandle<Result<(), std::io::Error>>)) ->
-Result_<()> {
+fn fuse_cleanup_(setup_payload: FusePayload) -> Result_<()> {
     info!("Running cleanup for FUSE FS, unmounting at `{:?}`.", setup_payload.0);
     let umount_process = Command::new("umount")
         .arg(setup_payload.0)
         .status()?;
     assert!(umount_process.success());
-    
+  
     info!("Waiting for FUSE mount invocation to return.");
     match setup_payload.1.join() {
         Ok(x) => x?,
@@ -68,25 +78,4 @@ Result_<()> {
     };
 
     Ok(())
-}
-
-impl GraphFilesystem {
-    #[instrument]
-    pub fn new_test() -> Self {
-        let mut graph_filesystem = GraphFilesystem::new();
-
-        let tag_1 = graph_filesystem.create_tag("tag_1");
-        let tag_2 = graph_filesystem.create_tag("tag_2");
-        let tag_3 = graph_filesystem.create_tag("tag_2");
-
-        let file_1 = graph_filesystem.create_file("file_1");
-        let file_2 = graph_filesystem.create_file("file_2");
-        let file_3 = graph_filesystem.create_file("file_3");
-
-        graph_filesystem.add_tag_to_file(
-            file_1.ino, tag_1.ino
-        ).unwrap();
-
-        graph_filesystem
-    }
 }
