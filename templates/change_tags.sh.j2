@@ -1,0 +1,7 @@
+{{ wrapper_name }}() {
+    # set -eou pipefail
+    cd "$({{ to_binary }} tags change $@)"
+
+    # TODO: ct --help prints help output as a part of cd error...
+    # TODO: Restore shell settings on exit or error.
+}
