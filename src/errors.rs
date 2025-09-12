@@ -1,10 +1,26 @@
 use std::error::Error;
 
-// TODO: See if can replace with either that one crate or
+// TODO: Consider replacing with either that one crate or
 // own error chain w/ generics.
+// TODO: Consistent file, lineno.
 pub type Result_<T> = Result<T, AnyError>;
 
-pub type AnyError = Box<dyn Error>;
+pub trait StringExt {
+    fn append_if_error<T>(&mut self, r: Result_<T>);
+}
+
+impl StringExt for String {
+    fn append_if_error<T>(&mut self, r: Result_<T>) {
+        if let Err(e) = r {
+            self.push_str(" ");
+            self.push_str(&e.to_string());
+        }
+    }
+}
+
+// TODO: Read up on reasoning behind things that are not Send and Sync. And why does
+// `into`/conversions not work for some cases when not including Sync
+pub type AnyError = Box<dyn Error + Send + Sync>;
 
 #[macro_export]
 macro_rules! unwrap_or {

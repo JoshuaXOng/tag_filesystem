@@ -1,136 +1,111 @@
-use std::{collections::{BTreeSet, HashMap, HashSet}, ffi::{OsStr, OsString}, time::SystemTime};
+use std::{collections::{HashMap, HashSet}, fmt::Display, time::SystemTime};
 
-use fuser::{FileAttr, FileType};
-use tracing::warn;
+use bon::Builder;
+use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::Result_, inodes::{try_from_free_inode, FileInode, TagInode, TagInodes}, unwrap_or};
+use crate::{entries::TfsEntry, errors::Result_, inodes::{FileInode, TagInodes}, unwrap_or, wrappers::{write_btreeset, write_iter, VecWrapper}};
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone)]
+// TODO: Figure out eval steps. File inheriting perms
+// from directory etc., maybe rename - same with Tag builder. 
+#[derive(Builder, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone)]
+#[builder(on(String, into))]
 pub struct TfsFile {
-    pub name: OsString,
+    pub name: String,
     pub inode: FileInode,
-    // TODO: Remove, should just be a handle to some other struct that contains.
-    content: Vec<u8>,
-    blocks: u64,
-    time: SystemTime,
-    permissions: u16,
-    pub tags: TagInodes
-}
-
-impl TfsFile {
-    pub fn get_name(&self) -> &OsStr {
-        &self.name
-    }
-
-    pub fn get_inode(&self) -> FileInode {
-        self.inode
-    }
-
-    pub fn get_tags(&self) -> &TagInodes {
-        &self.tags
-    }
-
-    pub fn get_attributes(&self) -> FileAttr {
-        FileAttr {
-            ino: self.inode.get_id(),
-            // TODO: This is probably wrong.
-            size: (self.content.len() * size_of::<u8>()) as u64,
-            blocks: self.blocks,
-            atime: SystemTime::UNIX_EPOCH,
-            mtime: SystemTime::UNIX_EPOCH,
-            ctime: SystemTime::UNIX_EPOCH,
-            crtime: SystemTime::UNIX_EPOCH,
-            kind: FileType::RegularFile,
-            perm: self.permissions,
-            nlink: 1,
-            uid: 1000,
-            gid: 1000,
-            rdev: 0,
-            flags: 0,
-            blksize: 512,
-        }
-    }
+    pub owner: u32,
+    pub group: u32,
+    #[builder(default = 0o640)]
+    pub permissions: u16,
+    #[builder(default = SystemTime::now())]
+    pub when_accessed: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_modified: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_changed: SystemTime,
+    #[builder(default = TagInodes::new())]
+    pub tags: TagInodes,
 }
 
 impl TfsEntry for TfsFile {
-    fn get_name(&self) -> OsString {
-        self.get_name().into()
+    fn get_name(&self) -> &str {
+        &self.name
     }
 
-    fn get_raw_inode(&self) -> u64 {
-        self.get_inode().get_id()
+    fn get_inode_id(&self) -> u64 {
+        self.inode.get_id()
     }
 
-    fn get_attributes(&self) -> FileAttr {
-        self.get_attributes()
-    }
-}
-
-pub struct TfsFileBuilder {
-    name: OsString,
-    inode: FileInode,
-    content: Vec<u8>,
-    blocks: u64,
-    time: Option<SystemTime>,
-    permissions: Option<u16>,
-    tags: TagInodes
-}
-
-// TODO: Figure out eval steps. File inheriting perms from dir etc.
-impl TfsFileBuilder {
-    pub fn new(file_name: &OsStr, inode_id: &FileInode) -> Self {
-        Self {
-            name: file_name.to_owned(),
-            inode: inode_id.clone(),
-            content: Vec::new(),
-            blocks: 0,
-            time: None,
-            permissions: None,
-            tags: TagInodes::new()
-        }
+    fn get_owner(&self) -> u32 {
+        self.owner
     }
 
-    pub fn build(self) -> TfsFile {
-        TfsFile {
-            name: self.name,
-            inode: self.inode,
-            content: self.content,
-            blocks: self.blocks,
-            time: self.time.unwrap_or(SystemTime::UNIX_EPOCH),
-            permissions: self.permissions.unwrap_or(0o664),
-            tags: self.tags
-        }
+    fn get_group(&self) -> u32 {
+        self.group
     }
 
-    pub fn set_tags(mut self, tags: TagInodes) -> Self {
-        self.tags = tags;
-        self
+    fn get_permissions(&self) -> u16 {
+        self.permissions
+    }
+
+    fn get_file_kind(&self) -> FileType {
+        FileType::RegularFile
+    }
+
+    fn get_when_accessed(&self) -> SystemTime {
+        self.when_accessed
+    }
+
+    fn get_when_modified(&self) -> SystemTime {
+        self.when_modified
+    }
+
+    fn get_when_changed(&self) -> SystemTime {
+        self.when_changed
     }
 }
 
-#[derive(Debug)]
-pub struct TfsFiles {
-    files: HashMap<FileInode, TfsFile>,
-    by_tags: HashMap<TagInodes, Vec<FileInode>>, 
-    by_name_and_tags: HashMap<(OsString, TagInodes), FileInode>, 
+impl<'a> From<&'a TfsFile> for &'a TagInodes {
+    fn from(value: &'a TfsFile) -> Self {
+        &value.tags
+    }
 }
 
-// TODO: How to de-dup mut and non-mut code.
-//
-// Don't return mut references of files.
-//
-// Go through indexes first, rather than file properties.
-impl TfsFiles {
+impl Display for TfsFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}(id={}, tags=", self.name, self.inode)?;
+        write_btreeset(f, &self.tags.0)?;
+        write!(f, ")")
+    }
+}
+
+type ByInode = HashMap<FileInode, TfsFile>;
+type ByTags = HashMap<TagInodes, Vec<FileInode>>;
+type ByNameAndTags = HashMap<(String, TagInodes), FileInode>;
+
+#[derive(Debug, Clone)]
+pub struct IndexedFiles {
+    files: ByInode,
+    by_tags: ByTags, 
+    by_name_and_tags: ByNameAndTags
+}
+
+impl IndexedFiles {
     pub fn new() -> Self {
         Self {
-            files: HashMap::new(),
-            by_tags: HashMap::new(),
-            by_name_and_tags: HashMap::new(),
+            files: ByInode::new(),
+            by_tags: ByTags::new(),
+            by_name_and_tags: ByNameAndTags::new(),
         }
     }
 
     pub fn get_by_inode(&self, file_inode: &FileInode) -> Option<&TfsFile> {
         self.files.get(file_inode)
+    }
+
+    pub fn get_by_inode_id(&self, inode_id: u64) -> Result_<&TfsFile> {
+        let file_inode = FileInode::try_from(inode_id)?;
+        self.files.get(&file_inode)
+            .ok_or(format!("File with inode `{file_inode}` does not exist.").into())
     }
 
     fn get_by_inode_mut(&mut self, file_inode: &FileInode) -> Option<&mut TfsFile> {
@@ -161,22 +136,18 @@ impl TfsFiles {
         matching_files
     }
 
-    pub fn get_by_name_and_tags(&self, file_name: &OsStr, file_tags: &TagInodes)
+    pub fn get_by_name_and_tags(&self, file_name: &str, file_tags: &TagInodes)
     -> Option<&TfsFile> {
         let file_inode = self.by_name_and_tags
-            .get(&(file_name.into(), file_tags.clone()))?;
+            .get(&(file_name.to_string(), file_tags.clone()))?;
 
         self.files.get(file_inode)
     }
 
-    fn get_by_name_and_tags_mut(&mut self, file_name: &OsStr, file_tags: &TagInodes)
+    fn get_by_name_and_tags_mut(&mut self, file_name: &str, file_tags: &TagInodes)
     -> Option<&mut TfsFile> {
         let file_inode = self.by_name_and_tags
-            .get(&(file_name.into(), file_tags.clone()));
-        let file_inode = match file_inode {
-            Some(x) => x,
-            None => return None,
-        };
+            .get(&(file_name.to_string(), file_tags.clone()))?;
 
         self.files.get_mut(file_inode)
     }
@@ -190,164 +161,162 @@ impl TfsFiles {
     }
 
     pub fn get_tag_sets(&self) -> Vec<&TagInodes> {
-        self.by_tags.keys()
+        self.by_tags.iter()
+            .filter(|(_, files)| !files.is_empty())
+            .map(|(tags, _)| tags)
             .collect()
+    }
+
+    pub fn get_neighbour_tag_inodes(&self, current_tags: &TagInodes) -> TagInodes {
+        let mut neighbour_tags = TagInodes::new(); 
+        for tag_set in self.get_tag_sets() {
+            if !tag_set.0.is_superset(&current_tags.0) {
+                continue
+            }
+            neighbour_tags.0.extend(&tag_set.0 - &current_tags.0);
+        }
+        neighbour_tags
     }
 
     pub fn get_inuse_inodes(&self) -> Vec<&FileInode> {
         self.files.keys().collect()
     }
 
-    // TODO: Can optimize finding free inode, binary search type beat.
     pub fn get_free_inode(&self) -> Result_<FileInode> {
         let inodes_inuse = self.get_inuse_inodes();
-        try_from_free_inode(inodes_inuse)
+        FileInode::try_from_free_inodes(inodes_inuse)
     }
 
     fn will_collide(&self, check_for: &TfsFile) -> Result_<()> {
-        let does_inode = self.files.contains_key(&check_for.inode);
-        let do_tags = self.by_tags.get(&check_for.tags)
-            .map(|inodes| inodes.contains(&check_for.inode))
+        Self::_will_collide(&self.files, &self.by_tags, &self.by_name_and_tags,
+            &check_for.name, &check_for.inode, &check_for.tags)
+    }
+
+    fn _will_collide(files: &ByInode, by_tags: &ByTags, by_name_and_tags: &ByNameAndTags,
+        name: &str, inode: &FileInode, tags: &TagInodes
+    ) -> Result_<()> {
+        let does_inode = files.contains_key(&inode);
+        let do_tags = by_tags.get(&tags)
+            .map(|inodes| inodes.contains(&inode))
             .unwrap_or(false);
-        let does_name_and_tags = self.by_name_and_tags
-            .contains_key(&(check_for.name.clone(), check_for.tags.clone()));
+        let does_name_and_tags = by_name_and_tags
+            .contains_key(&(name.to_string(), tags.clone()));
         if does_inode || do_tags || does_name_and_tags {
-            Err(format!(
-                "Collisions on inode, tags, name and tags: {:?}",
-                (does_inode, do_tags, does_name_and_tags)
-            ))?;
+            Err(format!("Collisions on inode, tags, name and tags: {}, {}, {}",
+                does_inode, do_tags, does_name_and_tags))?;
         }
         Ok(())
     }
 
-    pub fn do_by_inode<T>(
-        &mut self, file_inode: &FileInode,
-        to_do: impl FnOnce(&mut TfsFile) -> T
-    ) -> Result_<T> {
+    pub fn do_by_inode<T>(&mut self, file_inode: &FileInode, to_do: impl FnOnce(FileUpdate) -> T)
+    -> Result_<T> {
         self.do_or_rollback(file_inode, to_do)
     }
 
-    // TODO: See if can change to a func accepting Vec of muts.
-    // TODO: Change to FnOnce.
-    // TODO: Rollback to the start.
-    pub fn do_by_tags<T>(
-        &mut self, file_tags: &TagInodes,
-        mut to_do: impl FnMut(&mut TfsFile) -> T
-    ) -> Result_<Vec<T>> {
+    pub fn do_by_tags<T>(&mut self, file_tags: &TagInodes,
+        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T
+    ) -> Result_<T> {
         let target_inodes = self.by_tags.get(file_tags)
-            .ok_or(format!("No files with tags `{file_tags:?}`."))?
+            .ok_or(format!("No files with tags `{file_tags}`."))?
             .clone();
-        let to_return = self.do_or_rollback_bulk(&target_inodes.into_iter()
-            .collect(), &mut to_do)?;
-
-        Ok(to_return.into_values()
-            .collect())
+        let to_return = self.do_or_complete_rollback_bulk(&target_inodes.into_iter()
+            .collect(), to_do)?;
+        Ok(to_return)
     }
 
-    pub fn do_by_name_and_tags<T>(
-        &mut self, file_name: &OsStr, file_tags: &TagInodes,
-        to_do: impl FnOnce(&mut TfsFile) -> T
+    pub fn do_by_name_and_tags<T>(&mut self, file_name: &str, file_tags: &TagInodes,
+        to_do: impl FnOnce(FileUpdate) -> T
     ) -> Result_<T> {
-        let target_inode = self.by_name_and_tags.get(&(file_name.into(), file_tags.clone()))
+        let target_inode = *self.by_name_and_tags.get(&(
+            file_name.to_string(),
+            file_tags.clone()))
             .ok_or(format!(
-                "No file with name and tags: `{}` and `{:?}`.",
-                file_name.to_string_lossy(), file_tags
-            ))?
-            .clone();
+                "No file with name and tags: `{}` and `{}`.",
+                file_name, file_tags))?;
         self.do_or_rollback(&target_inode, to_do)
     }
 
-    fn do_or_rollback<T>(
-        &mut self, file_inode: &FileInode,
-        to_do: impl FnOnce(&mut TfsFile) -> T
-    ) -> Result_<T> {
-        let mut target_file = self.get_by_inode_mut(file_inode)
-            .ok_or(format!("No file with inode `{file_inode:?}`."))?;
-
-        let original_values = (target_file.inode, target_file.name.clone(), target_file.tags.clone());
-        let to_return = to_do(&mut target_file);
-        let new_values = (target_file.inode, target_file.name.clone(), target_file.tags.clone());
-
-        if original_values != new_values {
-            let mut target_file = self.files.remove(&original_values.0)
-                .expect("To not yet have modified inode key.");
-            _ = self.by_tags.remove(&original_values.2);
-            _ = self.by_name_and_tags.remove(&(
-                original_values.1.clone(), original_values.2.clone()
-            ));
-
-            if let Err(e) = self.will_collide(&target_file) {
-                target_file.inode = original_values.0;
-                target_file.name = original_values.1;
-                target_file.tags = original_values.2;
-                self.add_unchecked(target_file);
-                return Err(e);
-            }
-            self.add_unchecked(target_file);
-        }
-
-        Ok(to_return)
+    fn do_or_rollback<T>(&mut self, file_inode: &FileInode, to_do: impl FnOnce(FileUpdate) -> T)
+    -> Result_<T> {
+        let mut target_file = self.remove_by_inode(file_inode)
+            .ok_or(format!("File with inode `{file_inode}` does not exist."))?;
+        let callback_return = to_do(FileUpdate {
+            files: &self.files,
+            by_tags: &self.by_tags,
+            by_name_and_tags: &self.by_name_and_tags,
+            name: &mut target_file.name,
+            inode: &mut target_file.inode,
+            owner: &mut target_file.owner,
+            group: &mut target_file.group,
+            permissions: &mut target_file.permissions,
+            when_accessed: &mut target_file.when_accessed,
+            when_modified: &mut target_file.when_modified,
+            when_changed: &mut target_file.when_changed,
+            tags: &mut target_file.tags
+        });
+        self.add(target_file)?;
+        Ok(callback_return)
     }
 
-    // TODO: See if you can supply vec as arg.
-    // TODO: For other methods, return iter instead of Vec, Hashset?
-    fn do_or_rollback_bulk<T>(
-        &mut self, file_inodes: &HashSet<FileInode>,
-        mut to_do: impl FnMut(&mut TfsFile) -> T
-    ) -> Result_<HashMap<FileInode, T>> {
-        let (target_inodes, nonexistent_inodes): (HashSet<_>, HashSet<_>) = file_inodes.iter()
-            .partition(|inode| self.files.get(inode).is_some());
-        if nonexistent_inodes.len() > 0 {
-            return Err(format!(
-                "Inodes `{nonexistent_inodes:?}` don't exist.").into());
-        }
-        let expectation = "To be using partition of inodes which exist.";
-
-        let original_files: HashSet<_> = target_inodes.iter()
-            .map(|inode| self.files.get(&inode)
-                .expect(expectation)
-                .clone())
-            .collect();
-
-        let mut to_return = HashMap::new();
-
-        let mut modified_files = HashSet::new();
-        for target_inode in &target_inodes {
-            let mut target_file = self.files.get_mut(&target_inode)
-                .expect(expectation);
-            to_return.insert(*target_inode, to_do(&mut target_file));
-            let target_file = self.files.remove(&target_inode)
-                .expect(expectation);
-            modified_files.insert(target_file);
+    // TODO: For other methods and this, return iter instead of Vec, Hashset?
+    fn do_or_partial_rollback_bulk<T>(&mut self, file_inodes: &HashSet<FileInode>,
+        mut to_do: impl FnMut(FileUpdate) -> T)
+    -> Result_<HashMap<FileInode, T>> {
+        let dont_exist = file_inodes.iter()
+            .filter(|inode| self.get_by_inode(inode)
+                .is_none())
+            .collect::<Vec<_>>();
+        if !dont_exist.is_empty() {
+            return Err(format!("Some inodes `{}` in the argument do not exist.",
+                VecWrapper(dont_exist)).into());
         }
 
-        let mut inserted_sofar = HashSet::new();
-        for modified_file in modified_files {
-            let modified_file = unwrap_or!(self.add(modified_file), e, {
-                if inserted_sofar.iter()
-                    .map(|inode| self.files.remove(inode))
-                    .any(|file| file.is_none())
-                {
-                    warn!("Bug, the inode should have been inserted prior.");
-                };
-                
-                for original_file in original_files.into_iter() {
-                    self.add(original_file)
-                        .expect("`add` to have no bugs, and \
-                            removed inodes of original files that are \
-                            being re-instated.");
-                }
+        let mut callback_returns = HashMap::new();
+        for file_inode in file_inodes {
+            callback_returns.insert(*file_inode,
+                self.do_or_rollback(file_inode, &mut to_do)?);
+        }
 
-                return Err(e);
-            });
+        Ok(callback_returns)
+    }
 
-            let did_insert = inserted_sofar.insert(modified_file.get_inode());
-            if !did_insert {
-                warn!("Bug, the inode should have been removed prior.");
+    fn do_or_complete_rollback_bulk<T>(&mut self, file_inodes: &HashSet<FileInode>,
+        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T)
+    -> Result_<T> {
+        let dont_exist = file_inodes.iter()
+            .filter(|inode| self.get_by_inode(inode)
+                .is_none())
+            .collect::<Vec<_>>();
+        if !dont_exist.is_empty() {
+            return Err(format!("Some inodes `{}` in the argument do not exist.",
+                VecWrapper(dont_exist)).into());
+        }
+
+        let mut for_modification = HashSet::new(); 
+        for file_inode in file_inodes {
+            for_modification.insert(self.remove_by_inode(file_inode)
+                .expect("To have checked all inodes correspond with an \
+                    existing file."));
+        }
+        let original_files = for_modification.clone(); 
+        let callback_return = to_do(&mut for_modification);
+
+        let mut is_any_conflicts = false;
+        let mut modified_files = IndexedFiles::new();
+        for modified_file in for_modification {
+            if self.will_collide(&modified_file).is_err() 
+            || modified_files.add(modified_file).is_err() {
+                is_any_conflicts = true;
             }
         }
 
-        Ok(to_return)
+        let nonconflicting_files = if is_any_conflicts { original_files }
+        else { modified_files.files.into_values().collect() };
+        for nonconflicting_file in nonconflicting_files {
+            self.add_unchecked(nonconflicting_file);
+        }
+
+        Ok(callback_return)
     }
 
     pub fn add(&mut self, to_add: TfsFile) -> Result_<&TfsFile> {
@@ -393,12 +362,101 @@ impl TfsFiles {
             .collect()
     }
 
-    pub fn remove_by_name_and_tags(
-        &mut self, file_name: &OsStr, file_tags: &TagInodes
-    ) -> Option<TfsFile> {
+    pub fn remove_by_name_and_tags(&mut self, file_name: &str, file_tags: &TagInodes)
+    -> Option<TfsFile> {
         let to_remove = self.by_name_and_tags
-            .get(&(file_name.into(), file_tags.clone()))?
+            .get(&(file_name.to_string(), file_tags.clone()))?
             .clone();
         self.remove_by_inode(&to_remove)
     }
 }
+
+impl Display for IndexedFiles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_iter(f, ('[', ']'), self.files.values())
+    }
+}
+
+pub struct FileUpdate<'a, 'b> {
+    files: &'a ByInode,
+    by_tags: &'a ByTags, 
+    by_name_and_tags: &'a ByNameAndTags, 
+
+    name: &'b mut String,
+    inode: &'b mut FileInode,
+    pub owner: &'b mut u32,
+    pub group: &'b mut u32,
+    pub permissions: &'b mut u16,
+    pub when_accessed: &'b SystemTime,
+    pub when_modified: &'b SystemTime,
+    pub when_changed: &'b SystemTime,
+    tags: &'b mut TagInodes,
+}
+
+impl<'a, 'b> FileUpdate<'a, 'b> {
+    pub fn try_set_name(&mut self, name: String) -> Result_<()> {
+        let original = self.name.clone();
+        *self.name = name;
+        if let Err(e) = self.will_collide() {
+            *self.name = original;
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    pub fn try_set_inode(&mut self, inode: FileInode) -> Result_<()> {
+        let original = self.inode.clone();
+        *self.inode = inode;
+        if let Err(e) = self.will_collide() {
+            *self.inode = original;
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    pub fn try_set_tags(&mut self, tags: TagInodes) -> Result_<()> {
+        let original = self.tags.clone();
+        *self.tags = tags;
+        if let Err(e) = self.will_collide() {
+            *self.tags = original;
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    fn will_collide(&self) -> Result_<()> {
+        IndexedFiles::_will_collide(&self.files, &self.by_tags, &self.by_name_and_tags,
+            &self.name, &self.inode, &self.tags)
+    }
+}
+
+// TODO: Create macro to do something like the below.
+//impl<'a> FileUpdate<'a> {
+    // Want to only private a small subset of a nested struct's public fields?
+    // Can't selectively private a subset of a nested struct's fields.
+    // So, make it less effort to declare the fields that should be made
+    // public.
+    //
+    // Where `file` would be a field on the struct that is to be projected.
+    // ```project!(file, { 
+    //     name[RO]: String[str],
+    //     inode[RO]: FileInode,
+    //     tags[RO]: TagInodes,
+    //     something: String[str],
+    //     something_2: String[str],
+    // })```
+    // will generate something like the below
+    // ```
+    // fn get_name(&self) -> &str { ... }
+    // fn get_inode(&self) -> &FileInode { ... }
+    // fn get_tags(&self) -> &TagInodes { ... }
+    // fn get_something(&self) -> &str { &self.file.something }
+    // fn get_something_mut(&mut self) -> &mut str { &mut self.file.something }
+    // fn set_something(&mut self, something: String) { self.file.something = something; }
+    // fn get_something_2(&self) -> &str { &self.file.something_2 }
+    // fn get_something_2_mut(&mut self) -> &mut str { &mut self.file.something_2 }
+    // fn set_something_2(&mut self, something_2: String) { self.file.something_2 = something_2; }
+    // ```
+    //
+    // If any functions, just use `delegate` crate instead.
+//}

@@ -1,0 +1,13 @@
+[Unit]
+Description=Tag Filesystem
+[Service]
+Type=simple
+ExecStart={{ tfs_binary_path }} {{ mount_path }}
+ExecStop={{ tfs_binary_path }} -u {{ mount_path }}
+Restart=always
+RestartSec=5
+User={{ mount_user }}
+
+DeviceAllow=/dev/fuse rw
+[Install]
+WantedBy=multi-user.target

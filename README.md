@@ -1,78 +1,78 @@
-# Graph File System
+# Tag Filesystem
 
-Interacting with files in a graph-like way.
+A WIP FUSE filesystem based on the idea that sometimes it'd be useful if
+directories didn’t have an ordering.
 
-## Scenarios
+The filesystem utilizes files and tags. There are no traditional directories.
+* Files can be marked with tags
+* Files can be queried based on tags
 
-jxo@DESKTOP-FAQCGGM:~/graph_filesystem$ gfs
-jxo@DESKTOP-FAQCGGM:{ ~, graph_filesystem }$
+For the most part, filesystem interactions re-use the typical CLI binaries (e.g., `rm`, `mv`, `cd`, etc.).
 
-jxo@DESKTOP-FAQCGGM:{ ~, graph_filesystem }$ pwd
-{ home, jxo, graph_filesystem }
+# Examples
 
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ cd +{ d } -{ a }
-jxo@DESKTOP-FAQCGGM:{ b, c, d }$ 
+```bash
+# Run in background, or run as a systemd service.
+username@hostname:~/mnt$ nohup tfs iwanttags &
+username@hostname:~/mnt$ cd iwanttags
+username@hostname:~/mnt/iwanttags$ 
 
-jxo@DESKTOP-FAQCGGM:{ ~, graph_filesystem }$ ls
-jxo@DESKTOP-FAQCGGM:{ ~, graph_filesystem }$ mk file.txt
-jxo@DESKTOP-FAQCGGM:{ ~, graph_filesystem }$ ls
-file.txt
+username@hostname:~/mnt/iwanttags$ mkdir tag_1 tag_2 tag_3
+username@hostname:~/mnt/iwanttags$ touch file_1 file_2 file_3
 
-`{ a, b, c, d }file.txt` exists
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ lsa
-... d
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ ls
-...
+username@hostname:~/mnt/iwanttags$ ls
+tag_1
+tag_2
+tag_3
 
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ mv file.txt +{ d } -{ a }
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ mv file.txt { x, y, z }
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ mv file.txt { x, y, z }/new_name.txt
+username@hostname:~/mnt/iwanttags$ ls "{}"
+file_1
+file_2
+file_3
 
-jxo@DESKTOP-FAQCGGM:{ a, b, c }$ rm file.txt
+username@hostname:~/mnt/iwanttags$ mv file_1 "{ tag_1 }"
+username@hostname:~/mnt/iwanttags$ mv file_2 "{ tag_1, tag_2 }"
 
-//
-//
-//
+username@hostname:~/mnt/iwanttags$ ls "{}"
+file_3
 
-{ _tag_1_, _tag_2_ } _file_1_, _file_2_
-{ com.jxo.gfs, terraform } main.tf, variables.tf
+username@hostname:~/mnt/iwanttags$ ls "{ tag_1 }"
+file_1
+tag_2
 
-{ _tag_1_, _tag_2_, _tag_3_ } _file_1_
-{ com.jxo.gfs, terraform, docs } README.md
+username@hostname:~/mnt/iwanttags$ ls "{ tag_1, tag_2 }"
+file_2
 
-// Show current tags
-lt
-{ com.jxo.gfs, terraform, docs }
+username@hostname:~/mnt/iwanttags$ cd "{ tag_1 }"
+username@hostname:~/mnt/iwanttags/{ tag_1 }$
 
-// Tab completion
-// At { com.jxo.gfs }
-// Pressing tab should show unique tags that are used with the current tags.
-// E.g., { terraform, docs, src }
+username@hostname:~/mnt/iwanttags/{ tag_1 }$ mv "{ ., tag_2 }"/file_2 .
+username@hostname:~/mnt/iwanttags{ tag_1 }$ ls
+file_1
+file_2
 
-// Moving file or change current tags 
-at terraform, docs // { com.jxo.gfs } to { com.jxo.gfs, terraform, docs }
-st terraform, docs // { com.jxo.gfs, terraform, docs } to { com.jxo.gfs }
+# Contrived for the example (i.e., could have just done `cd {}`).
+username@hostname:~/mnt/iwanttags{ tag_1 }$ cd "{ ., !tag_1 }"
+username@hostname:~/mnt/iwanttags$
+```
 
-// Open file and close handle
-file_handle = open("{ com.jxo.gfs, terraform, docs } README.md")
-close(file_handle)
+TODO: Update on `ct`
 
-// Make tag and delete tag
-// Tags implicitly get created and deleted at first use and last use.
+# Contributing / Todo
 
-// Programming language
-import { _tag_1_, _tag_2_, _tag_3_ } _file_1_, _file_2_ 
+Feel free to fork repo if you want.
 
-///
-///
-/// YOU KNOW WHAT, WHEN YOU LOOK AT IT OBJECTIVELY, TAGGING FS IS ONLY DIFFERENT FROM
-/// NORMAL FS IN THAT TAGGING THERE IS NO ORDER. NORMAL FS HAS ORDER.
-/// E.G., /src/v4/api/events.py compared to { src, api, v4 } events.py
-/// WHY NO ADD ADDITIONAL ATTRIBUTES TO NORMAL FS TO ADD TAGS, THEN YOU CAN HAVE BOTH. 
-/// MANY TIMES ORDERING IS NOT DESIRED. SOMETIMES IT IS.
-/// E.G., { src, api, v4 } events.py, /au/com/jxo
-/// WELL, THE ORDERING IS MORE SO THAT USERS WILL SEE CERTAIN FILES/DIRS FIRST.
-/// FUCK THIS PROJECT. TBH, IT PROBABLY IS NOT A BENIFIT. A GOOD EXERCISE ON THINKING OBJECTIVELY.
-///
-///
+Feel free to raise PRs to the repo.
 
+Have scattered `TODO` comments around the codebase.
+
+Storing queries (these things `{ ... }` that allow searching by tags) is a bit sketchy at the moment.
+
+More broadly, want to eventually implement correct behaviour for core FUSE functions. And,
+eventually get off of FUSE.
+
+Tab completion. Pressing tab should show unique tags that are used with the current tags.
+
+# License
+
+This project is licensed under the [MIT license](LISENSE).

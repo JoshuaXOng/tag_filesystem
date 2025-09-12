@@ -1,9 +1,26 @@
-use std::ffi::OsString;
+use std::{fmt::Display, time::SystemTime};
 
-use fuser::FileAttr;
+use fuser::FileType;
 
 pub trait TfsEntry {
-    fn get_name(&self) -> OsString;
-    fn get_raw_inode(&self) -> u64;
-    fn get_attributes(&self) -> FileAttr;
+    fn get_name(&self) -> &str;
+    fn get_inode_id(&self) -> u64;
+
+    fn get_owner(&self) -> u32;
+    fn get_group(&self) -> u32;
+    fn get_permissions(&self) -> u16;
+
+    fn get_file_kind(&self) -> FileType;
+
+    fn get_when_accessed(&self) -> SystemTime;
+    fn get_when_modified(&self) -> SystemTime;
+    fn get_when_changed(&self) -> SystemTime;
+}
+
+impl Display for dyn TfsEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}(id={})",
+            self.get_name(),
+            self.get_inode_id())
+    }
 }
