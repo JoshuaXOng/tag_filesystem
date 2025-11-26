@@ -2,7 +2,7 @@ use std::{fmt::Display, path::PathBuf, time::SystemTime};
 
 use bon::bon;
 use fuser::FileAttr;
-use tracing::warn;
+use tracing::{instrument, warn};
 
 #[cfg(test)]
 use crate::storage::StubStorage;
@@ -95,14 +95,15 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             .collect()
     }
 
+    // TODO: Convert silent warn to error return.
+    #[instrument]
     fn get_namespace_string_from_tags(filesystem_tags: &IndexedTags, tag_inodes: &TagInodes)
     -> String {
         format_tags(tag_inodes.0.iter()
             .filter_map(|inode| 
                 filesystem_tags.get_by_inode(&inode)
                     .or_else(|| {
-                        warn!("Likely bug, files' and namespaces'
-                            tag ids should always be valid.");
+                        warn!("Likely bug, tag ids should always be valid.");
                         None
                     }))
             .map(|tag| tag.name.as_str()))
@@ -365,6 +366,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         Ok(removed_file)
     }
 
+    #[instrument(skip_all, fields(?tag_name))]
     pub fn delete_tag(&mut self, tag_name: &str) -> Result_<TfsTag> {
         let removed_tag = self.tags.remove_by_name(&tag_name)
             .ok_or(format!("Tag `{tag_name}` does not exist."))?;

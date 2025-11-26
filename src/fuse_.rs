@@ -35,19 +35,11 @@ macro_rules! return_error {
 // TODO: Check they reply errors are the most suitable ones.
 // TODO: Errors need to be displayed to the user not just logged.
 // TODO: What does TTL, generation, fh, flags do?
-// TODO: Can't do skip_all.
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
-    #[instrument(skip(self, request, _mode, _umask, _flags, reply))]
-    fn create(
-        &mut self,
-        request: &Request<'_>,
-        parent_inode: u64,
-        file_name: &OsStr,
-        _mode: u32,
-        _umask: u32,
-        _flags: i32,
-        reply: ReplyCreate,
-    ) {
+    #[instrument(skip_all, fields(?parent_inode, ?file_name))]
+    fn create(&mut self, request: &Request<'_>, parent_inode: u64, file_name: &OsStr,
+        _mode: u32, _umask: u32, _flags: i32, reply: ReplyCreate)
+    {
         if !get_is_inode_root(parent_inode) && !get_is_inode_a_namespace(parent_inode) {
             return_error!("Not child of TFS root nor a namespace.", reply, ENOENT);
         }
@@ -93,16 +85,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         info!("Created.");
     }
 
-    #[instrument(skip(self, request, _mode, _umask, reply))]
-    fn mkdir(
-        &mut self,
-        request: &Request<'_>,
-        parent_inode: u64,
-        tag_name: &OsStr,
-        _mode: u32,
-        _umask: u32,
-        reply: ReplyEntry,
-    ) {
+    #[instrument(skip_all, fields(?parent_inode, ?tag_name))]
+    fn mkdir(&mut self, request: &Request<'_>, parent_inode: u64, tag_name: &OsStr,
+        _mode: u32, _umask: u32, reply: ReplyEntry)
+    {
         let tag_name = tag_name.to_string_lossy();
 
         // TODO: Maybe accept mkdir everywhere, just always create at global.
@@ -135,8 +121,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         info!("Created.");
     }
     
-    #[instrument(skip(self, reply))]
-    fn lookup(&mut self, _: &Request, parent_inode: u64, predicate: &OsStr, reply: ReplyEntry) {
+    #[instrument(skip_all, fields(?parent_inode, ?predicate))]
+    fn lookup(&mut self, _: &Request, parent_inode: u64, predicate: &OsStr,
+        reply: ReplyEntry)
+    {
         // TODO: Is there not just a method that returns String instead of Cow?
         let predicate = predicate.to_string_lossy().to_string();
 
@@ -192,14 +180,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
             namespace, `{parent_inode}`.", reply, ENOENT);
     }
 
-    #[instrument(skip(self, _request, _file_handle, reply))]
-    fn getattr(
-        &mut self,
-        _request: &Request<'_>,
-        inode_id: u64,
-        _file_handle: Option<u64>,
-        reply: ReplyAttr,
-    ) {
+    #[instrument(skip_all, fields(?inode_id))]
+    fn getattr(&mut self, _request: &Request<'_>, inode_id: u64,
+        _file_handle: Option<u64>, reply: ReplyAttr)
+    {
         // TODO: See impact of NO_TTL
         // TODO: Use get_is_inode_root
         if get_is_inode_root(inode_id) {
@@ -231,15 +215,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     // in `/tmp/tfs/` doing `rmdir tag_1` vs `rmdir "{ tag_1 }"
     // TODO: Should allow listing of root or only allow {}?
     // TODO: Determine if pagination can probably be race cond. in multi user
-    #[instrument(skip(self, _request, _file_handle, reply))]
-    fn readdir(
-        &mut self,
-        _request: &Request,
-        inode_id: u64,
-        _file_handle: u64,
-        mut pagination_offset: i64,
-        mut reply: ReplyDirectory,
-    ) {
+    #[instrument(skip_all, fields(?inode_id))]
+    fn readdir(&mut self, _request: &Request, inode_id: u64, _file_handle: u64,
+        mut pagination_offset: i64, mut reply: ReplyDirectory)
+    {
         let is_listing_root = get_is_inode_root(inode_id);
         if !is_listing_root && !get_is_inode_a_namespace(inode_id) {
             return_error!("Inode not root or a namespace.", reply, ENOENT);
@@ -311,18 +290,11 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     // TODO: Use rest of args, or at least understand them.
-    #[instrument(skip(self, _request, _file_handle, _lock_owner, reply))]
-    fn read(
-        &mut self,
-        _request: &Request<'_>,
-        target_inode: u64,
-        _file_handle: u64,
-        start_position: i64,
-        read_amount: u32,
-        flags: i32,
-        _lock_owner: Option<u64>,
-        reply: ReplyData,
-    ) {
+    #[instrument(skip_all, fields(?target_inode, ?start_position, ?read_amount))]
+    fn read(&mut self, _request: &Request<'_>, target_inode: u64, _file_handle: u64,
+        start_position: i64, read_amount: u32, flags: i32, _lock_owner: Option<u64>,
+        reply: ReplyData)
+    {
         let file_inode: FileInode = unwrap_or!(target_inode.try_into(),
             e, return_error!("Not a file inode. {e}", reply, EINVAL));
         let start_position: u64 = unwrap_or!(start_position.try_into(),
@@ -339,7 +311,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     // TODO
-    #[instrument(skip(self, _request, reply))]
+    #[instrument(skip_all, fields(?target_inode))]
     fn open(&mut self, _request: &Request<'_>, target_inode: u64, _flags: i32,
         reply: ReplyOpen)
     {
@@ -348,47 +320,28 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     // TODO
-    #[instrument(skip(self, _request, reply))]
-    fn flush(
-        &mut self,
-        _request: &Request<'_>,
-        target_inode: u64,
-        file_handle: u64,
-        lock_owner: u64,
-        reply: ReplyEmpty,
-    ) {
+    #[instrument(skip_all, fields(?target_inode))]
+    fn flush(&mut self, _request: &Request<'_>, target_inode: u64, file_handle: u64,
+        lock_owner: u64, reply: ReplyEmpty)
+    {
         reply.ok();
         info!("Flushed.");
     }
 
     // TODO
-    #[instrument(skip(self, _request, reply))]
-    fn release(
-        &mut self,
-        _request: &Request<'_>,
-        _ino: u64,
-        _fh: u64,
-        _flags: i32,
-        _lock_owner: Option<u64>,
-        _flush: bool,
-        reply: ReplyEmpty,
-    ) {
+    #[instrument(skip_all, fields(?_ino))]
+    fn release(&mut self, _request: &Request<'_>, _ino: u64, _fh: u64, _flags: i32,
+        _lock_owner: Option<u64>, _flush: bool, reply: ReplyEmpty)
+    {
         reply.ok();
         info!("Released.");
     }
 
-    #[instrument(skip(self, _request, previous_parent, previous_name,
-        new_parent, new_name, _flags))]
-    fn rename(
-        &mut self,
-        _request: &Request<'_>,
-        previous_parent: u64,
-        previous_name: &OsStr,
-        new_parent: u64,
-        new_name: &OsStr,
-        _flags: u32,
-        reply: ReplyEmpty,
-    ) {
+    #[instrument(skip_all, fields(?previous_parent, ?previous_name, ?new_parent, ?new_name))]
+    fn rename(&mut self, _request: &Request<'_>, previous_parent: u64,
+        previous_name: &OsStr, new_parent: u64, new_name: &OsStr, _flags: u32,
+        reply: ReplyEmpty)
+    {
         let previous_name = previous_name.to_string_lossy();
         let new_name = new_name.to_string_lossy().to_string();
 
@@ -426,19 +379,11 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     // TODO: Not confirmed to be implemented (pagination offset...), handle errors better
     // TODO: Does {e} get rendered?
     // TODO: set nowrap in nvim and reformat width of all codes
-    #[instrument(skip(self, _request, _file_handle, to_write, _lock_owner, reply))]
-    fn write(
-        &mut self,
-        _request: &Request<'_>,
-        target_inode: u64,
-        _file_handle: u64,
-        start_position: i64,
-        to_write: &[u8],
-        write_flags: u32,
-        flags: i32,
-        _lock_owner: Option<u64>,
-        reply: ReplyWrite,
-    ) {
+    #[instrument(skip_all, fields(?target_inode, ?start_position))]
+    fn write(&mut self, _request: &Request<'_>, target_inode: u64, _file_handle: u64,
+        start_position: i64, to_write: &[u8], write_flags: u32, flags: i32,
+        _lock_owner: Option<u64>, reply: ReplyWrite)
+    {
         let byte_amount: u32 = unwrap_or!(to_write.len().try_into(),
             e, return_error!("Writing too much data. {e}", reply, EINVAL));
 
@@ -453,28 +398,13 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         info!("Written.");
     }
 
-    #[instrument(skip(
-        self, _request, _mode, uid, gid, size, _atime,
-        _mtime, _ctime, fh, _crtime, _chgtime, _bkuptime, flags, reply
-    ))]
-    fn setattr(
-        &mut self,
-        _request: &Request<'_>,
-        target_inode: u64,
-        _mode: Option<u32>,
-        uid: Option<u32>,
-        gid: Option<u32>,
-        size: Option<u64>,
-        _atime: Option<TimeOrNow>,
-        _mtime: Option<TimeOrNow>,
-        _ctime: Option<SystemTime>,
-        fh: Option<u64>,
-        _crtime: Option<SystemTime>,
-        _chgtime: Option<SystemTime>,
-        _bkuptime: Option<SystemTime>,
-        flags: Option<u32>,
-        reply: ReplyAttr,
-    ) {
+    #[instrument(skip_all, fields(?target_inode))]
+    fn setattr(&mut self, _request: &Request<'_>, target_inode: u64,
+        _mode: Option<u32>, uid: Option<u32>, gid: Option<u32>, size: Option<u64>,
+        _atime: Option<TimeOrNow>, _mtime: Option<TimeOrNow>, _ctime: Option<SystemTime>,
+        fh: Option<u64>, _crtime: Option<SystemTime>, _chgtime: Option<SystemTime>,
+        _bkuptime: Option<SystemTime>, flags: Option<u32>, reply: ReplyAttr)
+    {
         // TODO
         if let Ok(attributes) = self.get_fuser_attributes(target_inode) {
             reply.attr(&ANY_TTL, &attributes);
@@ -485,14 +415,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         }
     }
 
-    #[instrument(skip(self, _request, reply))]
-    fn unlink(
-        &mut self,
-        _request: &Request<'_>,
-        parent_inode: u64,
-        file_name: &OsStr,
-        reply: ReplyEmpty,
-    ) {
+    #[instrument(skip_all, fields(?parent_inode, ?file_name))]
+    fn unlink(&mut self, _request: &Request<'_>, parent_inode: u64,
+        file_name: &OsStr, reply: ReplyEmpty)
+    {
         if !get_is_inode_root(parent_inode) && !get_is_inode_a_namespace(parent_inode) {
             error!("Not child of TFS root nor a namespace.");
             reply.error(ENOENT);
@@ -521,9 +447,9 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         info!("Deleted.");
     }
 
-    #[instrument(skip(self, _request, reply))]
-    fn rmdir(&mut self, _request: &Request<'_>,
-        parent_inode: u64, tag_name: &OsStr, reply: ReplyEmpty)
+    #[instrument(skip_all, fields(?parent_inode, ?tag_name))]
+    fn rmdir(&mut self, _request: &Request<'_>, parent_inode: u64,
+        tag_name: &OsStr, reply: ReplyEmpty)
     {
         if !get_is_inode_root(parent_inode) {
             error!("Not child of TFS root.");

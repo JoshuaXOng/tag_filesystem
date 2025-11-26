@@ -1,6 +1,7 @@
-use std::{io::{self, Write}, sync::OnceLock};
-use tracing::info;
+use std::{ffi::{OsStr, OsString}, io::{self, Write}, sync::OnceLock};
+use tracing::{info, instrument};
 use tracing_subscriber::fmt::MakeWriter;
+use tracing_test::traced_test;
 
 use crate::tracing_::configure_tracing;
 
@@ -41,4 +42,20 @@ impl<'a> MakeWriter<'a> for TestWriter {
     fn make_writer(&'a self) -> Self::Writer {
         TestWriter
     }
+}
+
+#[test]
+#[ignore]
+#[traced_test]
+fn calling_function_that_traces() {
+    function(1, 2, 3, &OsString::from("(0) _ (0)"));
+    assert!(!logs_contain("a="));
+    assert!(logs_contain("b=2"));
+    assert!(!logs_contain("c="));
+    assert!(logs_contain("d=\"(0) _ (0)\""));
+}
+
+#[instrument(skip_all, fields(?b, ?d))]
+fn function(a: i32, b: i32, c: i32, d: &OsStr) {
+    info!("hello there :>");
 }
