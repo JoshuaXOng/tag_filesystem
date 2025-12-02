@@ -70,7 +70,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let namespace_inode = unwrap_or!(NamespaceInode::try_from(parent_inode),
             e, return_error!("{e}", reply, ENOENT));
         let tfs_namespace = unwrap_or!(self.get_namespaces()
-            .get_all()
+            .get_map()
             .get(&namespace_inode), 
             return_error!("Namespace with id `{namespace_inode}` does not exist.",
                 reply, ENOENT));

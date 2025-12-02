@@ -27,21 +27,18 @@ impl DelegateStorage {
     #[instrument]
     pub fn try_new(location_suffix: &PathBuf) -> Result_<Self> {
         let delegate_directory = Self::get_delegate_directory(location_suffix);
-        match delegate_directory.try_exists() {
-            Ok(true) => {
-                if !delegate_directory.is_dir() {
-                    return Err(format!("Delgate storage root needs a dir not \
-                        a file `{}`.", delegate_directory.to_string_lossy()).into());
-                }
-                warn!("Delegate storage already exists at `{}`, re-using it.",
-                    delegate_directory.to_string_lossy());
+        let does_exist = delegate_directory.try_exists()?;
+        if does_exist && !delegate_directory.is_dir() {
+            if !delegate_directory.is_dir() {
+                return Err(format!("Delgate storage root needs a dir not \
+                    a file `{}`.", delegate_directory.to_string_lossy()).into());
             }
-            Ok(false) => {
-                create_dir_all(&delegate_directory)?;
-                info!("Creating directories on the way to `{}`.",
-                    delegate_directory.to_string_lossy());
-            },
-            Err(e) => Err(e)?,
+            warn!("Delegate storage already exists at `{}`, re-using it.",
+                delegate_directory.to_string_lossy());
+        } else if !does_exist {
+            create_dir_all(&delegate_directory)?;
+            info!("Creating directories on the way to `{}`.",
+                delegate_directory.to_string_lossy());
         }
         Ok(Self { root: delegate_directory })
     }

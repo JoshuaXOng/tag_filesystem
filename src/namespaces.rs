@@ -68,7 +68,11 @@ impl IndexedNamepsaces {
         format!("Namespace id `{namespace_inode}` does not exist.")
     }
 
-    pub fn get_all(&self) -> &HashMap<NamespaceInode, TfsNamespace> { 
+    pub fn get_all(&self) -> Vec<&TfsNamespace> {
+        self.namespaces.values().collect()
+    }
+
+    pub fn get_map(&self) -> &HashMap<NamespaceInode, TfsNamespace> { 
         &self.namespaces 
     }
 

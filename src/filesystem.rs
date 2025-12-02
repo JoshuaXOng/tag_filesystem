@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf, time::SystemTime};
+use std::{fmt::Display, fs::{self, File}, io::{BufReader, Write}, path::PathBuf, time::SystemTime};
 
 use bon::bon;
 use fuser::FileAttr;
@@ -6,25 +6,43 @@ use tracing::{instrument, warn};
 
 #[cfg(test)]
 use crate::storage::StubStorage;
-use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, path_::{format_tags, parse_tags}, namespaces::{self, IndexedNamepsaces}, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
+use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces}, path_::{format_tags, parse_tags}, serde::{deserialize_tag_filesystem, serialize_tag_filesystem}, snapshots::PersistentSnapshots, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
 
-// TODO: Save after each change, how to mmap to disk?
+// TODO: Performance and saving after each change? (mmap, flushing)
+// TODO: How to implement, atomicity and crash tolerance
 #[derive(Debug)]
-pub struct TagFilesystem<Storage: TfsStorage> {
+pub struct TagFilesystem<Storage: TfsStorage = DelegateStorage> {
     files: IndexedFiles,
     tags: IndexedTags,
     // TODO: Should store parent to allow multi depth namespaces.
     namespaces: IndexedNamepsaces,
-    storage: Storage
+    storage: Storage,
+    snapshots: PersistentSnapshots,
+    journal: TfsJournal
 }
 
-impl TagFilesystem<DelegateStorage> {
+impl TagFilesystem {
     pub fn try_new(mount_path: &PathBuf) -> Result_<Self> {
+        let filesystem_snapshots = PersistentSnapshots::try_new(mount_path)?;
+        let mut indexed_files = IndexedFiles::new();
+        let mut indexed_tags = IndexedTags::new();
+        if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
+            // TODO: Read up on BufReader
+            let (persisted_files, persisted_tags, _) = deserialize_tag_filesystem(BufReader::new(&safe_snapshot))?;
+            for persisted_file in persisted_files {
+                indexed_files.add(persisted_file);
+            }
+            for persisted_tag in persisted_tags {
+                indexed_tags.add(persisted_tag);
+            }
+        }
         Ok(Self {
-            files: IndexedFiles::new(),
-            tags: IndexedTags::new(),
+            files: indexed_files,
+            tags: indexed_tags,
             namespaces: IndexedNamepsaces::new(),
-            storage: DelegateStorage::try_new(mount_path)?
+            storage: DelegateStorage::try_new(mount_path)?,
+            snapshots: filesystem_snapshots,
+            journal: TfsJournal::new()
         })
     }
 }
@@ -265,6 +283,16 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         self.tags.add(to_add)
     }
 
+    pub fn save_persistently(&self) -> Result_<()> {
+        serialize_tag_filesystem(
+            &self.snapshots.open_staging()?,
+            self.files.get_all(),
+            self.tags.get_all(),
+            self.namespaces.get_all())?;
+        self.snapshots.promote_staging();
+        Ok(())
+    }
+
     pub fn write_to_file(&mut self, file_inode: &FileInode, start_position: u64, to_write: &[u8])
     -> Result_<()> {
         self.storage.write(file_inode, start_position, to_write)
@@ -423,6 +451,7 @@ impl TagFilesystem<StubStorage> {
             tags: IndexedTags::new(),
             namespaces: IndexedNamepsaces::new(),
             storage: StubStorage,
+            journal: TfsJournal::new()
         }
     }
 }

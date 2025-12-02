@@ -14,6 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 askama = "0.14.0"
 bon = "3.8.1"
+capnp = "0.23.0"
 clap = { version = "4.5.47", features = ["derive", "string"] }
 drums = { path = "macros" }
 file-rotate = "0.8.0"
@@ -30,3 +31,6 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-test = "0.2.5"
 users = "0.11.0"
+
+[build-dependencies]
+capnpc = "0.23"
