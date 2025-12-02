@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{backtrace::Backtrace, error::Error, ops::Deref};
 
 // TODO: Consider replacing with either that one crate or
 // own error chain w/ generics.

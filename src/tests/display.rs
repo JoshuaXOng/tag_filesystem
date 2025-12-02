@@ -1,4 +1,5 @@
-use crate::{entries::TfsEntry, files::TfsFile, filesystem::TagFilesystem, inodes::{FileInode, TagInode, TagInodes}, tags::TfsTag};
+use crate::{entries::TfsEntry, files::TfsFile, filesystem::TagFilesystem, inodes::{FileInode,
+    TagInode, TagInodes}, tags::TfsTag};
 
 #[test]
 fn displaying_file_things() {

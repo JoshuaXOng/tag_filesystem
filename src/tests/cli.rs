@@ -4,7 +4,8 @@ use askama::Template;
 use clap::Parser;
 use tempfile::tempdir;
 
-use crate::{cli::{mount::systemd::{ServiceTemplate, SystemdParamereters}, tags::change::{ChangeParameters, ChangeTag}}, path_::PathBufExt, tests::tracing_::setup_tracing};
+use crate::{cli::{mount::systemd::{ServiceTemplate, SystemdParamereters},
+    tags::change::{ChangeParameters, ChangeTag}}, path_::PathBufExt, tests::tracing_::setup_tracing};
 
 #[test]
 fn parsing_changing_tags() {

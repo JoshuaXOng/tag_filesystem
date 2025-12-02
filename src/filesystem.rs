@@ -1,36 +1,101 @@
-use std::{fmt::Display, path::PathBuf, time::SystemTime};
+use std::{fmt::Display, fs::File, io::BufReader, path::PathBuf, thread::sleep, time::{Duration,
+    Instant, SystemTime}};
 
 use bon::bon;
-use fuser::FileAttr;
-use tracing::{instrument, warn};
+use fuser::{spawn_mount2, FileAttr, MountOption};
+use libc::SIGTERM;
+use signal_hook::iterator::Signals;
+use tracing::{info, instrument, warn};
 
 #[cfg(test)]
-use crate::storage::StubStorage;
-use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, path_::{format_tags, parse_tags}, namespaces::{self, IndexedNamepsaces}, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
+use crate::{snapshots::StubSnapshots, storage::StubStorage};
+use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
+    NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces},
+    path_::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
+    serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
+    storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
 
-// TODO: Save after each change, how to mmap to disk?
+// TODO: Performance and saving after each change? (mmap, flushing)
+// TODO: How to implement, atomicity and crash tolerance
 #[derive(Debug)]
-pub struct TagFilesystem<Storage: TfsStorage> {
+pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
+where Storage: TfsStorage, Snapshots: TfsSnapshots {
     files: IndexedFiles,
     tags: IndexedTags,
     // TODO: Should store parent to allow multi depth namespaces.
     namespaces: IndexedNamepsaces,
-    storage: Storage
+    storage: Storage,
+    snapshots: Snapshots,
+    journal: TfsJournal
 }
 
-impl TagFilesystem<DelegateStorage> {
+impl TagFilesystem {
+    const LOOP_COOLDOWN_SECONDS: u64 = 1;
+    const PERSIST_COOLDOWN_SECONDS: u64 = 5;
+
     pub fn try_new(mount_path: &PathBuf) -> Result_<Self> {
+        let filesystem_snapshots = PersistentSnapshots::try_new(mount_path)?;
+        let mut indexed_files = IndexedFiles::new();
+        let mut indexed_tags = IndexedTags::new();
+        if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
+            // TODO: Read up on BufReader
+            let (persisted_files, persisted_tags) = deserialize_tag_filesystem(
+                BufReader::new(&safe_snapshot))?;
+            for persisted_file in persisted_files {
+                indexed_files.add(persisted_file)?;
+            }
+            for persisted_tag in persisted_tags {
+                indexed_tags.add(persisted_tag)?;
+            }
+        }
         Ok(Self {
-            files: IndexedFiles::new(),
-            tags: IndexedTags::new(),
+            files: indexed_files,
+            tags: indexed_tags,
             namespaces: IndexedNamepsaces::new(),
-            storage: DelegateStorage::try_new(mount_path)?
+            storage: DelegateStorage::try_new(mount_path)?,
+            snapshots: filesystem_snapshots,
+            journal: TfsJournal::new()
         })
+    }
+
+    #[instrument]
+    pub fn run_filesystem(mount_path: &PathBuf) -> Result_<()> {
+        let mount_handle = spawn_mount2(Self::try_new(mount_path)?,
+            mount_path,
+            &[MountOption::AutoUnmount, MountOption::AllowRoot])?;
+        info!("Mounted TFS at `{}`.", mount_path.to_string_lossy());
+
+        let mut unix_signals = Signals::new(&[SIGTERM])?;
+
+        let root_dir = File::open(mount_path)?;
+        let mut last_sync = Instant::now();
+        loop {
+            sleep(Duration::from_secs(Self::LOOP_COOLDOWN_SECONDS));
+            info!("Slept `{}` seconds.", Self::LOOP_COOLDOWN_SECONDS); 
+
+            let should_persist =
+                last_sync.elapsed() > Duration::from_secs(Self::PERSIST_COOLDOWN_SECONDS);
+            if should_persist {
+                root_dir.sync_all()?;
+                info!("Directing `{}` to sync.", mount_path.to_string_lossy());
+                last_sync = Instant::now();
+            }
+
+            for unix_signal in unix_signals.pending() {
+                let is_sigterm = unix_signal == SIGTERM;
+                if is_sigterm {
+                    drop(mount_handle);
+                    info!("Unmounting TFS.");
+                    return Ok(());
+                }
+            }
+        }
     }
 }
 
 #[bon]
-impl<Storage: TfsStorage> TagFilesystem<Storage> {
+impl<Storage, Snapshots> TagFilesystem<Storage, Snapshots>
+where Storage: TfsStorage, Snapshots: TfsSnapshots {
     pub fn get_files(&self) -> &IndexedFiles {
         &self.files
     }
@@ -265,6 +330,15 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         self.tags.add(to_add)
     }
 
+    pub fn save_persistently(&self) -> Result_<()> {
+        serialize_tag_filesystem(
+            &self.snapshots.create_staging()?,
+            self.files.get_all(),
+            self.tags.get_all())?;
+        self.snapshots.promote_staging()?;
+        Ok(())
+    }
+
     pub fn write_to_file(&mut self, file_inode: &FileInode, start_position: u64, to_write: &[u8])
     -> Result_<()> {
         self.storage.write(file_inode, start_position, to_write)
@@ -405,7 +479,8 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
     }
 }
 
-impl<Storage: TfsStorage> Display for TagFilesystem<Storage> {
+impl<Storage, Snapshots> Display for TagFilesystem<Storage, Snapshots>
+where Storage: TfsStorage, Snapshots: TfsSnapshots {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TagFilesystem(")?;
         write!(f, "files={}, ", self.files)?;
@@ -416,13 +491,15 @@ impl<Storage: TfsStorage> Display for TagFilesystem<Storage> {
 }
 
 #[cfg(test)]
-impl TagFilesystem<StubStorage> {
+impl TagFilesystem<StubStorage, StubSnapshots> {
     pub fn new() -> Self {
         Self {
             files: IndexedFiles::new(),
             tags: IndexedTags::new(),
             namespaces: IndexedNamepsaces::new(),
             storage: StubStorage,
+            snapshots: StubSnapshots,
+            journal: TfsJournal::new(),
         }
     }
 }

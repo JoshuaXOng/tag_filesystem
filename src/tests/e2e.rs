@@ -1,10 +1,13 @@
-use std::{env::{current_dir, set_current_dir}, error::Error, ffi::{OsStr, OsString}, fs::{self, rename, File, OpenOptions}, io::{stdout, Write}, path::PathBuf, process::{self, Command, ExitStatus, Stdio}};
+use std::{env::{current_dir, set_current_dir}, error::Error, ffi::{OsStr, OsString}, fs::{self,
+    rename, File, OpenOptions}, io::{stdout, Write}, path::PathBuf, process::{self, Command,
+    ExitStatus, Stdio}};
 
 use clap::Parser;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
-use crate::{errors::Result_, tests::{fixtures::with_tfs_mount, tracing_::setup_tracing}, wrappers::VecWrapper};
+use crate::{errors::Result_, tests::{fixtures::with_tfs_mount, tracing_::setup_tracing},
+    wrappers::VecWrapper};
 
 #[test]
 fn listing_files_and_tags() {

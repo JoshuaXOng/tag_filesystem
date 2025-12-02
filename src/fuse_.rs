@@ -1,11 +1,14 @@
-use std::{ffi::OsStr, time::SystemTime};
+use std::{ffi::OsStr, thread::sleep, time::{Duration, SystemTime}};
 
-use fuser::{FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, Request, TimeOrNow, FUSE_ROOT_ID};
+use fuser::{FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory,
+    ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, Request, TimeOrNow, FUSE_ROOT_ID};
 use libc::{EINVAL, ENOENT};
 use log::info;
 use tracing::{error, instrument, warn};
 
-use crate::{entries::TfsEntry, errors::StringExt, files::TfsFile, filesystem::TagFilesystem, inodes::{get_is_inode_a_namespace, get_is_inode_root, FileInode, NamespaceInode, TagInode, TagInodes}, namespaces, storage::TfsStorage, tags::TfsTag, ttl::{ANY_TTL, NO_TTL}, unwrap_or};
+use crate::{entries::TfsEntry, errors::StringExt, files::TfsFile, filesystem::TagFilesystem,
+    inodes::{get_is_inode_a_namespace, get_is_inode_root, FileInode, NamespaceInode, TagInode,
+    TagInodes}, namespaces, storage::TfsStorage, tags::TfsTag, ttl::{ANY_TTL, NO_TTL}, unwrap_or};
 
 // TODO: How to minimize error returning propagation, a lot of Options
 // Maybe unwrap or should prefix with code in first param
@@ -35,6 +38,7 @@ macro_rules! return_error {
 // TODO: Check they reply errors are the most suitable ones.
 // TODO: Errors need to be displayed to the user not just logged.
 // TODO: What does TTL, generation, fh, flags do?
+// TODO: Make some of the FUSE ops atomic
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
     fn create(&mut self, request: &Request<'_>, parent_inode: u64, file_name: &OsStr,
@@ -70,7 +74,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let namespace_inode = unwrap_or!(NamespaceInode::try_from(parent_inode),
             e, return_error!("{e}", reply, ENOENT));
         let tfs_namespace = unwrap_or!(self.get_namespaces()
-            .get_all()
+            .get_map()
             .get(&namespace_inode), 
             return_error!("Namespace with id `{namespace_inode}` does not exist.",
                 reply, ENOENT));
@@ -329,6 +333,21 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     // TODO
+    #[instrument(skip_all, fields(?target_inode))]
+    fn fsyncdir(&mut self, _request: &Request<'_>, target_inode: u64,
+        _file_handle: u64, _datasync: bool, reply: ReplyEmpty)
+    {
+        let should_fsync_all = get_is_inode_root(target_inode); 
+        if should_fsync_all {
+            unwrap_or!(self.save_persistently(),
+                e, return_error!("Failed to save TFS state. {e}", reply, EINVAL));
+            reply.ok();
+            info!("Saved all.");
+            return;
+        }
+    }
+
+    // TODO
     #[instrument(skip_all, fields(?_ino))]
     fn release(&mut self, _request: &Request<'_>, _ino: u64, _fh: u64, _flags: i32,
         _lock_owner: Option<u64>, _flush: bool, reply: ReplyEmpty)
@@ -464,6 +483,25 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         }
         reply.ok();
         info!("Deleted.");
+    }
+
+    #[instrument(skip_all)]
+    fn destroy(&mut self) {
+        let max_tries = 4;
+        let initial_cooldown = 1;
+        for try_index in 0..max_tries {
+            if let Err(e) = self.save_persistently() {
+                error!("Failed to save TFS. {e}");
+            } else {
+                break;
+            }
+            let is_last = try_index != max_tries;
+            if is_last {
+                let retry_cooldown = initial_cooldown << try_index;
+                sleep(Duration::from_secs(retry_cooldown));
+                info!("Slept `{}` seconds.", retry_cooldown); 
+            }
+        }
     }
 }
 

@@ -1,7 +1,6 @@
 use std::{fs::create_dir_all, path::PathBuf};
 
 use clap::Args;
-use fuser::{mount2, MountOption};
 use tracing::info;
 
 use crate::{cli::ProgramParameters, errors::Result_, filesystem::TagFilesystem};
@@ -20,10 +19,7 @@ impl PlainParameters {
         } else {
             create_dir_all(&self.mount_path)?;
             info!("Creating all directories to `{}`.", _mount_path);
-            mount2(TagFilesystem::try_new(&self.mount_path)?,
-                &self.mount_path,
-                &[MountOption::AutoUnmount, MountOption::AllowRoot])?;
-            info!("Mounted TFS at `{}`.", _mount_path);
+            TagFilesystem::run_filesystem(&self.mount_path)?;
         }
         Ok(())
     }

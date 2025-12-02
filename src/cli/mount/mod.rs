@@ -3,7 +3,8 @@ pub mod systemd;
 
 use clap::{Parser, Subcommand};
 
-use crate::{cli::{mount::{plain::PlainParameters, systemd::SystemdParamereters}, ProgramParameters}, errors::Result_};
+use crate::{cli::{mount::{plain::PlainParameters, systemd::SystemdParamereters},
+    ProgramParameters}, errors::Result_};
 
 #[derive(Parser, Debug)]
 pub struct MountParameters {

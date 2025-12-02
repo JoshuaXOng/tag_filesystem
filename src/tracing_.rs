@@ -12,7 +12,6 @@ const SETUP_TRACING_EXPECTATION: &str = "That it's ok to crash if can't setup tr
 
 pub fn configure_tracing()
 -> (SubscriberBuilder<DefaultFields, Format, EnvFilter, fn() -> Stderr>, String) {
-
     let to_binary = current_exe()
         .expect(SETUP_TRACING_EXPECTATION);
     let binary_name = to_binary
@@ -42,6 +41,7 @@ pub fn configure_tracing()
 pub fn setup_tracing() {
     let tracing_setup = configure_tracing();
     // TODO: Safe across processes?
+    // TODO: Prefix path based on mount
     let rotating_writer = Mutex::new(FileRotate::new(
         get_configuration_directory().join("tfs.log"),
         AppendCount::new(1),

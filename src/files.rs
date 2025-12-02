@@ -3,7 +3,8 @@ use std::{collections::{HashMap, HashSet}, fmt::Display, time::SystemTime};
 use bon::Builder;
 use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::Result_, inodes::{FileInode, TagInodes}, unwrap_or, wrappers::{write_btreeset, write_iter, VecWrapper}};
+use crate::{entries::TfsEntry, errors::Result_, inodes::{FileInode, TagInodes}, unwrap_or,
+    wrappers::{write_btreeset, write_iter, VecWrapper}};
 
 // TODO: Figure out eval steps. File inheriting perms
 // from directory etc., maybe rename - same with Tag builder. 

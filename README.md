@@ -73,6 +73,10 @@ eventually get off of FUSE.
 
 Tab completion. Pressing tab should show unique tags that are used with the current tags.
 
+# Building
+
+TODO: Need capnproto?
+
 # License
 
 This project is licensed under the [MIT license](LISENSE).

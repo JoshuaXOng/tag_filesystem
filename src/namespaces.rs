@@ -2,7 +2,8 @@ use std::{collections::HashMap, fmt::Display, time::SystemTime};
 
 use fuser::{FileAttr, FileType};
 
-use crate::{errors::Result_, inodes::{NamespaceInode, TagInodes, ANY_NAMESPACE_INODE}, wrappers::write_iter};
+use crate::{errors::Result_, inodes::{NamespaceInode, TagInodes, ANY_NAMESPACE_INODE},
+    wrappers::write_iter};
 
 #[derive(Debug)]
 pub struct TfsNamespace {
@@ -68,7 +69,11 @@ impl IndexedNamepsaces {
         format!("Namespace id `{namespace_inode}` does not exist.")
     }
 
-    pub fn get_all(&self) -> &HashMap<NamespaceInode, TfsNamespace> { 
+    pub fn get_all(&self) -> Vec<&TfsNamespace> {
+        self.namespaces.values().collect()
+    }
+
+    pub fn get_map(&self) -> &HashMap<NamespaceInode, TfsNamespace> { 
         &self.namespaces 
     }
 

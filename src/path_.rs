@@ -75,6 +75,7 @@ pub fn format_tags<'a> (tag_tokens: impl Iterator<Item = &'a str>) -> String {
     _formated_tags
 }
 
+// TODO: Ensure no conflicts in paths if mounting more than one
 pub fn get_configuration_directory() -> PathBuf {
     PathBuf::from(shellexpand::tilde("~/.tag_filesystem").as_ref())
 }

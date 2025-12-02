@@ -6,5 +6,7 @@ mod fixtures;
 mod inodes;
 mod miscellaneous;
 mod path_;
+mod persistence;
+mod snapshots;
 mod storage;
 mod tracing_;

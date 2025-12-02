@@ -3,7 +3,8 @@ pub mod setup;
 
 use clap::{Parser, Subcommand};
 
-use crate::{cli::{tags::{change::ChangeParameters, setup::SetupParameters}, ProgramParameters}, errors::Result_};
+use crate::{cli::{tags::{change::ChangeParameters, setup::SetupParameters}, ProgramParameters},
+    errors::Result_};
 
 #[derive(Parser, Debug)]
 pub struct TagsParameters {
