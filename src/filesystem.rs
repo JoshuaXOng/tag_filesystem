@@ -5,19 +5,20 @@ use fuser::FileAttr;
 use tracing::{instrument, warn};
 
 #[cfg(test)]
-use crate::storage::StubStorage;
-use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces}, path_::{format_tags, parse_tags}, serde::{deserialize_tag_filesystem, serialize_tag_filesystem}, snapshots::PersistentSnapshots, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
+use crate::{snapshots::StubSnapshots, storage::StubStorage};
+use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces}, path_::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem, serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots}, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
 
 // TODO: Performance and saving after each change? (mmap, flushing)
 // TODO: How to implement, atomicity and crash tolerance
 #[derive(Debug)]
-pub struct TagFilesystem<Storage: TfsStorage = DelegateStorage> {
+pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
+where Storage: TfsStorage, Snapshots: TfsSnapshots {
     files: IndexedFiles,
     tags: IndexedTags,
     // TODO: Should store parent to allow multi depth namespaces.
     namespaces: IndexedNamepsaces,
     storage: Storage,
-    snapshots: PersistentSnapshots,
+    snapshots: Snapshots,
     journal: TfsJournal
 }
 
@@ -31,10 +32,10 @@ impl TagFilesystem {
             let (persisted_files, persisted_tags) = deserialize_tag_filesystem(
                 BufReader::new(&safe_snapshot))?;
             for persisted_file in persisted_files {
-                indexed_files.add(persisted_file);
+                indexed_files.add(persisted_file)?;
             }
             for persisted_tag in persisted_tags {
-                indexed_tags.add(persisted_tag);
+                indexed_tags.add(persisted_tag)?;
             }
         }
         Ok(Self {
@@ -49,7 +50,8 @@ impl TagFilesystem {
 }
 
 #[bon]
-impl<Storage: TfsStorage> TagFilesystem<Storage> {
+impl<Storage, Snapshots> TagFilesystem<Storage, Snapshots>
+where Storage: TfsStorage, Snapshots: TfsSnapshots {
     pub fn get_files(&self) -> &IndexedFiles {
         &self.files
     }
@@ -289,7 +291,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             &self.snapshots.open_staging()?,
             self.files.get_all(),
             self.tags.get_all())?;
-        self.snapshots.promote_staging();
+        self.snapshots.promote_staging()?;
         Ok(())
     }
 
@@ -433,7 +435,8 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
     }
 }
 
-impl<Storage: TfsStorage> Display for TagFilesystem<Storage> {
+impl<Storage, Snapshots> Display for TagFilesystem<Storage, Snapshots>
+where Storage: TfsStorage, Snapshots: TfsSnapshots {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TagFilesystem(")?;
         write!(f, "files={}, ", self.files)?;
@@ -444,14 +447,15 @@ impl<Storage: TfsStorage> Display for TagFilesystem<Storage> {
 }
 
 #[cfg(test)]
-impl TagFilesystem<StubStorage> {
+impl TagFilesystem<StubStorage, StubSnapshots> {
     pub fn new() -> Self {
         Self {
             files: IndexedFiles::new(),
             tags: IndexedTags::new(),
             namespaces: IndexedNamepsaces::new(),
             storage: StubStorage,
-            journal: TfsJournal::new()
+            snapshots: StubSnapshots,
+            journal: TfsJournal::new(),
         }
     }
 }

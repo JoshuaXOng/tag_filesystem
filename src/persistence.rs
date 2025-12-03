@@ -1,8 +1,8 @@
-use std::{io::{BufRead, Cursor, Write}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{io::{BufRead, Write}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use capnp::{message::{self, ReaderOptions}, serialize_packed};
 
-use crate::{errors::{AnyError, Result_}, files::TfsFile, filesystem_capnp::tag_filesystem, inodes::{FileInode, TagInode, TagInodes}, tags::TfsTag};
+use crate::{errors::{AnyError, Result_}, files::TfsFile, filesystem_capnp::tag_filesystem, inodes::{FileInode, TagInode}, tags::TfsTag};
 
 pub fn deserialize_tag_filesystem(read_location: impl BufRead)
     -> Result_<(Vec<TfsFile>, Vec<TfsTag>)>
@@ -117,8 +117,8 @@ fn as_system_time_unix_epoch(unix_epoch: u64) -> Result_<SystemTime> {
         .ok_or(format!("Invalid Unix epoch, `{}`.", unix_epoch).into())
 }
 
-// TODO/WIP
-pub fn serialize_tag_filesystem(write_location: &impl Write,
+// TODO/WIP: Better error handling
+pub fn serialize_tag_filesystem(write_location: impl Write,
     tfs_files: Vec<&TfsFile>, tfs_tags: Vec<&TfsTag>)
     -> Result_<()>
 {
@@ -159,19 +159,4 @@ pub fn serialize_tag_filesystem(write_location: &impl Write,
     serialize_packed::write_message(write_location, &capnp_message)?;
 
     Ok(())
-}
-
-#[test]
-fn running_serialize_tag_filesystem() {
-    let mut x = vec![];
-    serialize_tag_filesystem(&mut x, vec![
-        &TfsFile::builder()
-            .name(String::from("Poop"))
-            .inode(101.try_into().unwrap())
-            .owner(1000)
-            .group(1000)
-            .build()
-    ], vec![], vec![]);
-    // TODO: Read up on Cursor::new
-    deserialize_tag_filesystem(Cursor::new(x));
 }

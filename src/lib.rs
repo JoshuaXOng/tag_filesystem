@@ -16,7 +16,7 @@ pub mod inodes;
 pub mod journal;
 pub mod namespaces;
 pub mod path_;
-pub mod serde;
+pub mod persistence;
 pub mod snapshots;
 pub mod storage;
 pub mod tags;
