@@ -106,6 +106,14 @@ impl From<TagInode> for TagInodes {
     }
 }
 
+impl<T> From<T> for TagInodes where T: Iterator<Item = TagInode> {
+    fn from(value: T) -> Self {
+        let mut tag_inodes = Self::new();
+        value.for_each(|inode| _ = tag_inodes.0.insert(inode));
+        tag_inodes
+    }
+}
+
 impl Display for TagInodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write_btreeset(f, &self.0)

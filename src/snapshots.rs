@@ -13,6 +13,7 @@ pub struct PersistentSnapshots {
     safe: PathBuf
 }
 
+// TODO/WIP: Add checksums
 impl PersistentSnapshots {
     #[instrument]
     pub fn try_new(location_suffix: &PathBuf) -> Result_<Self> {

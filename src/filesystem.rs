@@ -28,7 +28,8 @@ impl TagFilesystem {
         let mut indexed_tags = IndexedTags::new();
         if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
             // TODO: Read up on BufReader
-            let (persisted_files, persisted_tags, _) = deserialize_tag_filesystem(BufReader::new(&safe_snapshot))?;
+            let (persisted_files, persisted_tags) = deserialize_tag_filesystem(
+                BufReader::new(&safe_snapshot))?;
             for persisted_file in persisted_files {
                 indexed_files.add(persisted_file);
             }
@@ -287,8 +288,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         serialize_tag_filesystem(
             &self.snapshots.open_staging()?,
             self.files.get_all(),
-            self.tags.get_all(),
-            self.namespaces.get_all())?;
+            self.tags.get_all())?;
         self.snapshots.promote_staging();
         Ok(())
     }

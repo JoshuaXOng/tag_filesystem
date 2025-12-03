@@ -8,8 +8,9 @@ fn main() {
     let schemas_directory = PathBuf::from(CAPNP_SCHEMA_DIRECTORY);
     CompilerCommand::new()
         .src_prefix(&schemas_directory)
-        // TODO: rename
-        .file(schemas_directory.join("inodes.capnp"))
+        .file(schemas_directory.join("filesystem.capnp"))
+        .file(schemas_directory.join("file.capnp"))
+        .file(schemas_directory.join("tag.capnp"))
         .run()
         .unwrap();
 }
