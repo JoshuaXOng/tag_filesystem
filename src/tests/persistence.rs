@@ -1,7 +1,9 @@
 use std::io::Cursor;
 
+// TODO: See if rust-analyzer can auto format imports.
 use crate::{files::TfsFile, persistence::{deserialize_tag_filesystem, serialize_tag_filesystem}};
 
+// TODO: WIP
 #[test]
 fn running_serialize_tag_filesystem() {
     let mut x = vec![];
