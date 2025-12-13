@@ -1,9 +1,17 @@
 use std::error::Error;
 
+use crate::WithBacktrace;
+
 // TODO: Consider replacing with either that one crate or
 // own error chain w/ generics.
 // TODO: Consistent file, lineno.
 pub type Result_<T> = Result<T, AnyError>;
+pub(crate) type ResultBt<T, E> = Result<T, WithBacktrace<E>>;
+pub(crate) type ResultBtAny<T> = Result<T, WithBacktrace<AnyError>>;
+
+define_to_dyn!(&str);
+define_to_dyn!(std::io::Error);
+define_to_dyn!(serde_json::Error);
 
 pub trait StringExt {
     fn append_if_error<T>(&mut self, r: Result_<T>);

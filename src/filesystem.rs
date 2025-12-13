@@ -9,7 +9,7 @@ use tracing::{info, instrument, warn};
 
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
+use crate::{entries::TfsEntry, errors::{ResultBtAny, Result_}, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
     NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces},
     path_::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
@@ -330,7 +330,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         self.tags.add(to_add)
     }
 
-    pub fn save_persistently(&self) -> Result_<()> {
+    pub fn save_persistently(&self) -> ResultBtAny<()> {
         serialize_tag_filesystem(
             &self.snapshots.create_staging()?,
             self.files.get_all(),

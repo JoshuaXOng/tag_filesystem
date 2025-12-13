@@ -1,10 +1,23 @@
-use syn::{parse_macro_input, punctuated::Punctuated, AttrStyle, Ident, Item, Meta,
-    MetaList, Token};
+use proc_macro2::{Punct, Spacing, Span};
+use syn::{parse_macro_input, punctuated::Punctuated, AttrStyle, Ident, Item,
+    Meta, Path, Token, Data, DeriveInput};
 use quote::quote;
 
-// TODO: How to reduce nesting w/ macros 
+macro_rules! if_not_variant {
+    ($enum: expr, $the_variant: path, $other_variant: ident, $else_do: expr) => {
+        {
+            match $enum {
+                $the_variant(variant) => variant,
+                $other_variant => _ = $else_do
+            }
+        }
+    };
+}
 
 pub fn _define_with_backtrace(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let dyn_codes = get_into_dyn_codes(
+        Some(Punct::new('$', Spacing::Alone)),
+        Ident::new("error_type", Span::call_site()));
     quote! {
         #[derive(Debug)]
         struct WithBacktrace<E> {
@@ -43,37 +56,28 @@ pub fn _define_with_backtrace(_: proc_macro::TokenStream) -> proc_macro::TokenSt
             }
         }
 
+        #[allow(dead_code)]
         macro_rules! define_to_dyn {
             ($error_type: ty) => {
-                impl From<$error_type> for WithBacktrace<Box<dyn std::error::Error>> {
-                    fn from(value: $error_type) -> Self {
-                        Self {
-                            error: value.into(),
-                            backtrace: std::backtrace::Backtrace::capture()
-                        }
-                    }
-                }
-
-                impl From<WithBacktrace<$error_type>> for WithBacktrace<Box<dyn std::error::Error>> {
-                    fn from(value: WithBacktrace<$error_type>) -> Self {
-                        Self {
-                            error: value.error.into(),
-                            backtrace: value.backtrace,
-                        } 
-                    }
-                }
+                #dyn_codes
             };
         }
     }.into()
 }
 
+const BACKTRACE_FROM_HELPER: &str = "bt_from";
+
 pub fn _derive_backtrace(code_tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let item = parse_macro_input!(code_tokens as Item);
-    let (to_identifier, attributes) = match item {
-        Item::Enum(_enum) => (_enum.ident, _enum.attrs),
-        Item::Struct(_struct) => (_struct.ident, _struct.attrs),
-        _ => panic!("Enum or s only TODO: better warnings")
-    };
+    let derive_item = parse_macro_input!(code_tokens as DeriveInput);
+    if let Data::Union(_) = derive_item.data {
+        return syn::Error::new_spanned(
+            derive_item.ident,
+            "Backtrace cannot be applied to unions.")
+            .to_compile_error()
+            .into();
+    }
+    let to_identifier = derive_item.ident;
+    let attributes = derive_item.attrs;
 
     let mut to_codes = vec![];
 
@@ -81,45 +85,51 @@ pub fn _derive_backtrace(code_tokens: proc_macro::TokenStream) -> proc_macro::To
         if AttrStyle::Outer != attribute.style {
             continue;
         }
-        if let Meta::List(MetaList { path, tokens, .. }) = attribute.meta {
-            let tokens: proc_macro::TokenStream = tokens.into();
+        let helper_attributes = if_not_variant!(attribute.meta, Meta::List, _other, {
+            continue;
+        }); 
+        let attribute_identifier = if_not_variant!(helper_attributes.path.get_ident(),
+            Some, _option, continue);
+        if attribute_identifier.to_string() != BACKTRACE_FROM_HELPER {
+            continue;
+        }
 
-            if let Some(attribute_identifier) = path.get_ident() {
-                // TODO: Assign to v. ident.
-                if attribute_identifier.to_string() != "bt_from" {
-                    continue;
+        let helper_arguments: proc_macro::TokenStream = helper_attributes.tokens.into();
+        let arguments_parser = Punctuated::<Path, Token![,]>::parse_terminated;
+        let helper_arguments = parse_macro_input!(helper_arguments with arguments_parser);
+
+        for from_identifier in helper_arguments {
+            to_codes.push(quote! {
+                impl From<crate::WithBacktrace<#from_identifier>> for crate::WithBacktrace<#to_identifier> {
+                    fn from(value: crate::WithBacktrace<#from_identifier>) -> Self {
+                        Self {
+                            error: #to_identifier::from(value.error),
+                            backtrace: value.backtrace,
+                        } 
+                    }
                 }
 
-                let arguments_parser = Punctuated::<Ident, Token![,]>::parse_terminated;
-                let attribute_arguments = parse_macro_input!(tokens with arguments_parser);
-
-                for from_identifier in attribute_arguments {
-                    to_codes.push(quote! {
-                        impl From<crate::WithBacktrace<#from_identifier>> for crate::WithBacktrace<#to_identifier> {
-                            fn from(value: crate::WithBacktrace<#from_identifier>) -> Self {
-                                Self {
-                                    error: #to_identifier::from(value.error),
-                                    backtrace: value.backtrace,
-                                } 
-                            }
-                        }
-
-                        impl From<#from_identifier> for crate::WithBacktrace<#to_identifier> {
-                            fn from(value: #from_identifier) -> Self {
-                                #to_identifier::from(value).into()
-                            }
-                        }
-                    }); 
+                impl From<#from_identifier> for crate::WithBacktrace<#to_identifier> {
+                    fn from(value: #from_identifier) -> Self {
+                        #to_identifier::from(value).into()
+                    }
                 }
-            }
+            }); 
         }
     }
 
-    // TODO: Deduplicate
-    // E.g., something like `crate::define_to_dyn!(#to_identifier)`
-    let dyn_codes = quote! {
-        impl From<#to_identifier> for crate::WithBacktrace<Box<dyn std::error::Error>> {
-            fn from(value: #to_identifier) -> Self {
+    let dyn_codes = get_into_dyn_codes(None, to_identifier);
+
+    quote! {
+        #(#to_codes)*
+        #dyn_codes
+    }.into()
+}
+
+fn get_into_dyn_codes(prefix_punctuation: Option<Punct>, to_identifier: Ident) -> proc_macro2::TokenStream {
+    quote! {
+        impl From<#prefix_punctuation #to_identifier> for crate::WithBacktrace<Box<dyn std::error::Error>> {
+            fn from(value: #prefix_punctuation #to_identifier) -> Self {
                 Self {
                     error: value.into(),
                     backtrace: std::backtrace::Backtrace::capture()
@@ -127,18 +137,31 @@ pub fn _derive_backtrace(code_tokens: proc_macro::TokenStream) -> proc_macro::To
             }
         }
 
-        impl From<crate::WithBacktrace<#to_identifier>> for crate::WithBacktrace<Box<dyn std::error::Error>> {
-            fn from(value: crate::WithBacktrace<#to_identifier>) -> Self {
+        impl From<crate::WithBacktrace<#prefix_punctuation #to_identifier>> for crate::WithBacktrace<Box<dyn std::error::Error>> {
+            fn from(value: crate::WithBacktrace<#prefix_punctuation #to_identifier>) -> Self {
                 Self {
                     error: value.error.into(),
                     backtrace: value.backtrace,
                 } 
             }
         }
-    };
 
-    quote! {
-        #(#to_codes)*
-        #dyn_codes
-    }.into()
+        impl From<#prefix_punctuation #to_identifier> for crate::WithBacktrace<Box<dyn std::error::Error + Send + Sync>> {
+            fn from(value: #prefix_punctuation #to_identifier) -> Self {
+                Self {
+                    error: value.into(),
+                    backtrace: std::backtrace::Backtrace::capture()
+                }
+            }
+        }
+
+        impl From<crate::WithBacktrace<#prefix_punctuation #to_identifier>> for crate::WithBacktrace<Box<dyn std::error::Error + Send + Sync>> {
+            fn from(value: crate::WithBacktrace<#prefix_punctuation #to_identifier>) -> Self {
+                Self {
+                    error: value.error.into(),
+                    backtrace: value.backtrace,
+                } 
+            }
+        }
+    }
 }

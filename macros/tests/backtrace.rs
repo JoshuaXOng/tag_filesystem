@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(unused))]
 
-use std::{env, error::Error, fmt::Display, io::Error as IoError, sync::OnceLock};
+use std::{env, error::Error, fmt::Display, sync::OnceLock};
 
 // TODO: What, how is this possible?
 use derive_more::{Display, Error};
@@ -235,7 +235,7 @@ fn running_external_to_bt_dyn() {
 const EXT2BTDYN_DEBUG: &str = r#"Custom { kind: Other, error: "test" }"#;
 const EXT2BTDYN_LINE: u32 = line!() + 3;
 fn external_to_bt_dyn() -> Result<(), WithBacktrace<Box<dyn Error>>> {
-    let e = IoError::other("test");
+    let e = std::io::Error::other("test");
     Err(e)?;
     Ok(())
 }
@@ -303,18 +303,18 @@ fn running_bt_external_to_bt_dyn() {
 const BTEXT2BTDYN_DEBUG: &str = r#"Custom { kind: Other, error: "test" }"#;
 const BTEXT2BTDYN_LINE: u32 = line!() + 2;
 fn bt_external_to_bt_dyn() -> Result<(), WithBacktrace<Box<dyn Error>>> {
-    let e = WithBacktrace::new(IoError::other("test"));
+    let e = WithBacktrace::new(std::io::Error::other("test"));
     Err(e)?;
     Ok(())
 }
 
 define_with_backtrace!();
 
-define_to_dyn!(IoError);
+define_to_dyn!(std::io::Error);
 
 #[derive(Debug, Display, Error, Backtrace)]
 #[display("ErrorA")]
-#[bt_from(ErrorB, ErrorC, IoError)]
+#[bt_from(ErrorB, ErrorC, std::io::Error)]
 struct ErrorA;
 
 impl From<ErrorB> for ErrorA {
@@ -329,8 +329,8 @@ impl From<ErrorC> for ErrorA {
     }
 }
 
-impl From<IoError> for ErrorA {
-    fn from(_: IoError) -> Self {
+impl From<std::io::Error> for ErrorA {
+    fn from(_: std::io::Error) -> Self {
         ErrorA
     }
 }
@@ -343,6 +343,6 @@ struct ErrorB;
 #[display("ErrorC::{_variant}")]
 enum ErrorC {
     #[display("One({_0})")]
-    One(Box<dyn Error>),
+    One(Box<dyn Error + Send + Sync>),
     Two
 }

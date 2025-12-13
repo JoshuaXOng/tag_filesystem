@@ -1,15 +1,38 @@
 use std::{fs::{self, create_dir_all, File}, io::Write, path::{Path, PathBuf}};
 
+use derive_more::{Display, Error};
+use drums::Backtrace;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{info, instrument};
 
-use crate::{errors::Result_, path_::get_configuration_directory, wrappers::PathExt};
+use crate::{errors::{AnyError, ResultBt, ResultBtAny, Result_},
+    path_::get_configuration_directory, wrappers::PathExt};
 
-pub trait TfsSnapshots {
-    fn open_safe(&self) -> Result_<File>;
-    fn create_staging(&self) -> Result_<File>; 
-    fn promote_staging(&self) -> Result_<()>;
+pub(crate) trait TfsSnapshots {
+    fn open_safe(&self) -> ResultBt<File, OpenError>;
+    fn create_staging(&self) -> ResultBtAny<File>; 
+    fn promote_staging(&self) -> ResultBtAny<()>;
+}
+
+#[derive(Debug, Display, Error, Backtrace)]
+#[display("SnapshotError::{_variant}")]
+#[bt_from(AnyError, std::io::Error)]
+pub enum OpenError {
+    Checksum(AnyError),
+    Other(AnyError)
+}
+
+impl From<AnyError> for OpenError {
+    fn from(value: AnyError) -> Self {
+        Self::Other(value)
+    }
+}
+
+impl From<std::io::Error> for OpenError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Other(value.into())
+    }
 }
 
 #[derive(Debug)]
@@ -114,7 +137,7 @@ impl PersistentSnapshots {
 
 impl TfsSnapshots for PersistentSnapshots {
     #[instrument(skip_all)]
-    fn open_safe(&self) -> Result_<File> {
+    fn open_safe(&self) -> ResultBt<File, OpenError> {
         let snapshot_pointers = self.get_snapshot_pointers()?;
         let to_snapshot = snapshot_pointers.get_snapshot()?;
         
@@ -128,17 +151,16 @@ impl TfsSnapshots for PersistentSnapshots {
         info!("Read SHA-256 file `{}`.", to_sha256.to_string_lossy());
         let did_get_malformed = computed_sha256 != stored_sha256;
         if did_get_malformed {
-            // TODO: Maybe use thiserror, need to return enum
-            // As want to handle this case differently
-            return Err(format!("Computed SHA-256 of safe snapshot is not equal \
-                to the stored SHA-256 of the snapshot.").into());
+            return Err(OpenError::Checksum("Computed SHA-256 of safe \
+                snapshot is not equal to the stored SHA-256 of the snapshot.".into())
+                .into());
         }
 
         Ok(safe_snapshot)
     }
 
     #[instrument(skip_all)]
-    fn create_staging(&self) -> Result_<File> {
+    fn create_staging(&self) -> ResultBtAny<File> {
         let to_snapshot = self.get_opposite_snapshot_path()?;
         let staging_snapshot = File::create(&to_snapshot)?;
         info!("Opened and truncated `{}`.", to_snapshot.to_string_lossy());
@@ -146,7 +168,7 @@ impl TfsSnapshots for PersistentSnapshots {
     }
 
     #[instrument(skip_all)]
-    fn promote_staging(&self) -> Result_<()> {
+    fn promote_staging(&self) -> ResultBtAny<()> {
         let to_snapshot = self.get_opposite_snapshot_path()?;
         let mut staging_snapshot = File::open(&to_snapshot)?;
         staging_snapshot.flush()?;
@@ -243,15 +265,16 @@ pub struct StubSnapshots;
 
 #[cfg(test)]
 impl TfsSnapshots for StubSnapshots {
-    fn open_safe(&self) -> Result_<File> {
+    fn open_safe(&self) -> ResultBt<File, OpenError> {
+        return Err(OpenError::Checksum("No actual file for stub.".into())
+            .into());
+    }
+
+    fn create_staging(&self) -> ResultBtAny<File> {
         Err("No actual file for stub.".into())
     }
 
-    fn create_staging(&self) -> Result_<File> {
-        Err("No actual file for stub.".into())
-    }
-
-    fn promote_staging(&self) -> Result_<()> {
+    fn promote_staging(&self) -> ResultBtAny<()> {
         Ok(())
     }
 }

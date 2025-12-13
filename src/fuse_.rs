@@ -340,7 +340,13 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let should_fsync_all = get_is_inode_root(target_inode); 
         if should_fsync_all {
             unwrap_or!(self.save_persistently(),
-                e, return_error!("Failed to save TFS state. {e}", reply, EINVAL));
+                // TODO/WIP
+                //e, return_error!("Failed to save TFS state. {e}", reply, EINVAL));
+                e, {
+                    error!("Failed to save TFS state. {}", e.get());
+                    reply.error(EINVAL);
+                    return;
+                });
             reply.ok();
             info!("Saved all.");
             return;
@@ -491,7 +497,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let initial_cooldown = 1;
         for try_index in 0..max_tries {
             if let Err(e) = self.save_persistently() {
-                error!("Failed to save TFS. {e}");
+                error!("Failed to save TFS. {}", e.get());
             } else {
                 break;
             }
