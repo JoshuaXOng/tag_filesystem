@@ -2,11 +2,11 @@ use std::{io::{BufRead, Write}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use capnp::{message::{self, ReaderOptions}, serialize_packed};
 
-use crate::{errors::{AnyError, ResultBtAny_}, files::TfsFile, filesystem_capnp::tag_filesystem,
+use crate::{errors::{AnyError, ResultBtAny}, files::TfsFile, filesystem_capnp::tag_filesystem,
     inodes::{FileInode, TagInode}, tags::TfsTag};
 
 pub fn deserialize_tag_filesystem(read_location: impl BufRead)
-    -> ResultBtAny_<(Vec<TfsFile>, Vec<TfsTag>)>
+    -> ResultBtAny<(Vec<TfsFile>, Vec<TfsTag>)>
 {
     let capnp_message = serialize_packed::read_message(read_location,
         ReaderOptions::new())?;
@@ -114,7 +114,7 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
     Ok((tfs_files, tfs_tags))
 }
 
-fn as_system_time_unix_epoch(unix_epoch: u64) -> ResultBtAny_<SystemTime> {
+fn as_system_time_unix_epoch(unix_epoch: u64) -> ResultBtAny<SystemTime> {
     UNIX_EPOCH.checked_add(
         Duration::from_secs(unix_epoch))
         .ok_or(format!("Invalid Unix epoch, `{}`.", unix_epoch).into())
@@ -122,7 +122,7 @@ fn as_system_time_unix_epoch(unix_epoch: u64) -> ResultBtAny_<SystemTime> {
 
 pub fn serialize_tag_filesystem(write_location: impl Write,
     tfs_files: Vec<&TfsFile>, tfs_tags: Vec<&TfsTag>)
-    -> ResultBtAny_<()>
+    -> ResultBtAny<()>
 {
     type CapnpType = u32;
 

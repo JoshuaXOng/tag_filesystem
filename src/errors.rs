@@ -8,7 +8,6 @@ use crate::WithBacktrace;
 // TODO: Remove pub(crate) usages
 pub type ResultBt<T, E> = Result<T, WithBacktrace<E>>;
 pub type ResultBtAny<T> = Result<T, WithBacktrace<AnyError>>;
-pub type ResultBtAny_<T> = ResultBtAny<T>;
 
 define_to_dyn!(&str);
 define_to_dyn!(String);
@@ -19,11 +18,11 @@ define_to_dyn!(serde_json::Error);
 define_to_dyn!(askama::Error);
 
 pub(crate) trait StringExt {
-    fn append_if_error<T>(&mut self, r: ResultBtAny_<T>);
+    fn append_if_error<T>(&mut self, r: ResultBtAny<T>);
 }
 
 impl StringExt for String {
-    fn append_if_error<T>(&mut self, r: ResultBtAny_<T>) {
+    fn append_if_error<T>(&mut self, r: ResultBtAny<T>) {
         if let Err(e) = r {
             self.push_str(" ");
             self.push_str(&e.to_string());
