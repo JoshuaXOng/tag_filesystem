@@ -4,7 +4,7 @@ pub mod systemd;
 use clap::{Parser, Subcommand};
 
 use crate::{cli::{mount::{plain::PlainParameters, systemd::SystemdParamereters},
-    ProgramParameters}, errors::Result_};
+    ProgramParameters}, errors::ResultBtAny};
 
 #[derive(Parser, Debug)]
 pub struct MountParameters {
@@ -13,7 +13,7 @@ pub struct MountParameters {
 }
 
 impl MountParameters {
-    pub fn run(&self, program_arguments: &ProgramParameters) -> Result_<()> {
+    pub fn run(&self, program_arguments: &ProgramParameters) -> ResultBtAny<()> {
         match &self.subcommand {
             MountSubcommand::Systemd(systemd_argument) =>
                 systemd_argument.run(program_arguments),

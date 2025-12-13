@@ -9,7 +9,7 @@ use tracing::{info, instrument, warn};
 
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::Result_, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
+use crate::{entries::TfsEntry, errors::ResultBtAny, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
     NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces},
     path_::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
@@ -33,7 +33,7 @@ impl TagFilesystem {
     const LOOP_COOLDOWN_SECONDS: u64 = 1;
     const PERSIST_COOLDOWN_SECONDS: u64 = 5;
 
-    pub fn try_new(mount_path: &PathBuf) -> Result_<Self> {
+    pub fn try_new(mount_path: &PathBuf) -> ResultBtAny<Self> {
         let filesystem_snapshots = PersistentSnapshots::try_new(mount_path)?;
         let mut indexed_files = IndexedFiles::new();
         let mut indexed_tags = IndexedTags::new();
@@ -59,7 +59,7 @@ impl TagFilesystem {
     }
 
     #[instrument]
-    pub fn run_filesystem(mount_path: &PathBuf) -> Result_<()> {
+    pub fn run_filesystem(mount_path: &PathBuf) -> ResultBtAny<()> {
         let mount_handle = spawn_mount2(Self::try_new(mount_path)?,
             mount_path,
             &[MountOption::AutoUnmount, MountOption::AllowRoot])?;
@@ -100,7 +100,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         &self.files
     }
 
-    pub fn get_free_file_inode(&self) -> Result_<FileInode> {
+    pub fn get_free_file_inode(&self) -> ResultBtAny<FileInode> {
         self.files.get_free_inode()
     }
 
@@ -108,7 +108,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         &self.tags
     }
 
-    pub fn get_free_tag_inode(&self) -> Result_<TagInode> {
+    pub fn get_free_tag_inode(&self) -> ResultBtAny<TagInode> {
         self.tags.get_free_inode()
     }
 
@@ -117,7 +117,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn get_file_by_name_and_namespace_inode(&self, file_name: &str,
-        namespace_inode: &NamespaceInode) -> Result_<&TfsFile>
+        namespace_inode: &NamespaceInode) -> ResultBtAny<&TfsFile>
     {
         let namespace_tags = &self.namespaces.get_by_inode(namespace_inode)?.tags;
         self.files.get_by_name_and_tags(file_name, namespace_tags)
@@ -126,13 +126,13 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn get_files_by_namespace_inode(&self, namespace_inode: &NamespaceInode)
-    -> Result_<Vec<&TfsFile>> {
+    -> ResultBtAny<Vec<&TfsFile>> {
         let namespace_tags = &self.namespaces.get_by_inode(namespace_inode)?.tags;
         Ok(self.files.get_by_tags(namespace_tags))
     }
 
     pub fn get_inrange_tags<'a>(&self, tag_inodes: impl Into<&'a TagInodes>)
-    -> Result_<Vec<&TfsTag>> {
+    -> ResultBtAny<Vec<&TfsTag>> {
         let tag_inodes = tag_inodes.into();
 
         let mut inrange_tags = vec![];
@@ -149,7 +149,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn get_neighbour_tags<'a>(&self, tag_inodes: impl Into<&'a TagInodes>)
-    -> Result_<Vec<&TfsTag>> {
+    -> ResultBtAny<Vec<&TfsTag>> {
         let tag_inodes = tag_inodes.into();
 
         let neighbour_inodes = self.files.get_neighbour_tag_inodes(tag_inodes);
@@ -174,7 +174,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             .map(|tag| tag.name.as_str()))
     }
 
-    pub fn get_fuser_attributes(&self, inode_id: u64) -> Result_<FileAttr> {
+    pub fn get_fuser_attributes(&self, inode_id: u64) -> ResultBtAny<FileAttr> {
         FileInode::try_from(inode_id)
             .and_then(|inode| self.get_file_fuser(&inode))
             .or(TagInode::try_from(inode_id)
@@ -185,7 +185,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
                 tag or namespace inode.").into())
     }
 
-    pub fn get_file_fuser(&self, file_inode: &FileInode) -> Result_<FileAttr> {
+    pub fn get_file_fuser(&self, file_inode: &FileInode) -> ResultBtAny<FileAttr> {
         let target_file = self.files.get_by_inode(&file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist."))?;
         Ok(Self::to_fuser()
@@ -194,7 +194,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             .call())
     }
 
-    pub fn get_tag_fuser(&self, tag_inode: &TagInode) -> Result_<FileAttr> {
+    pub fn get_tag_fuser(&self, tag_inode: &TagInode) -> ResultBtAny<FileAttr> {
         let target_tag = self.tags.get_by_inode(&tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist."))?;
         Ok(Self::to_fuser()
@@ -202,7 +202,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             .call())
     }
 
-    pub fn get_namespace_fuser(&self, namespace_inode: &NamespaceInode) -> Result_<FileAttr> {
+    pub fn get_namespace_fuser(&self, namespace_inode: &NamespaceInode) -> ResultBtAny<FileAttr> {
         Ok(namespaces::get_fuse_attributes(&namespace_inode))
     }
 
@@ -229,7 +229,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         }
     }
 
-    fn check_tags_exist(&self, to_check: &TagInodes) -> Result_<()> {
+    fn check_tags_exist(&self, to_check: &TagInodes) -> ResultBtAny<()> {
         let doesnt_exist: Vec<_> = to_check.0.iter()
             .filter(|inode| self.tags.get_by_inode(inode)
                 .is_none())
@@ -242,7 +242,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
-    fn check_if_file_is_valid(&self, to_check: &TfsFile) -> Result_<()> {
+    fn check_if_file_is_valid(&self, to_check: &TfsFile) -> ResultBtAny<()> {
         if let Some(similar_file) = self.files.get_by_name_and_tags(&to_check.name,
             &to_check.tags)
         {
@@ -264,14 +264,14 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
-    fn check_if_tag_is_valid<'a>(&self, tag_inode: impl Into<&'a TagInode>) -> Result_<()> {
+    fn check_if_tag_is_valid<'a>(&self, tag_inode: impl Into<&'a TagInode>) -> ResultBtAny<()> {
         let tag_inode = tag_inode.into();
         let target_tag = self.tags.get_by_inode(tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist."))?;
         self.check_if_tag_is_valid_(target_tag)
     }
 
-    fn check_if_tag_is_valid_(&self, to_check: &TfsTag) -> Result_<()> {
+    fn check_if_tag_is_valid_(&self, to_check: &TfsTag) -> ResultBtAny<()> {
         for tfs_tag in self.tags.get_all() {
             let is_same = to_check.inode == tfs_tag.inode;
             let is_colliding = to_check.name == tfs_tag.name; 
@@ -319,18 +319,18 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         &self.storage
     }
 
-    pub fn add_file(&mut self, to_add: TfsFile) -> Result_<&TfsFile> {
+    pub fn add_file(&mut self, to_add: TfsFile) -> ResultBtAny<&TfsFile> {
         self.check_if_file_is_valid(&to_add)?;
         self.write_to_file(&to_add.inode, 0, &[])?;
         self.files.add(to_add)
     }
 
-    pub fn add_tag(&mut self, to_add: TfsTag) -> Result_<&TfsTag> {
+    pub fn add_tag(&mut self, to_add: TfsTag) -> ResultBtAny<&TfsTag> {
         self.check_if_tag_is_valid_(&to_add)?;
         self.tags.add(to_add)
     }
 
-    pub fn save_persistently(&self) -> Result_<()> {
+    pub fn save_persistently(&self) -> ResultBtAny<()> {
         serialize_tag_filesystem(
             &self.snapshots.create_staging()?,
             self.files.get_all(),
@@ -340,14 +340,14 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn write_to_file(&mut self, file_inode: &FileInode, start_position: u64, to_write: &[u8])
-    -> Result_<()> {
+    -> ResultBtAny<()> {
         self.storage.write(file_inode, start_position, to_write)
     }
     
     pub fn move_file<'a>(&mut self,
         old_tags: impl Into<&'a TagInodes>, old_name: &str,
         new_tags: impl Into<TagInodes>, new_name: String)
-    -> Result_<()> {
+    -> ResultBtAny<()> {
         let old_tags = old_tags.into();
         let new_tags = new_tags.into();
 
@@ -373,15 +373,15 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
                 .expect("To have nothing take up old name and tags in the \
                     meanwhile.");
             let mut _e = String::from("Name and tag(s) combination is invalid.");
-            if let Some(e) = e { _e += &format!(" {e}") }
-            for e in errors { _e += &format!(" {e}") }
+            if let Some(e) = e { _e += &format!(" {e:?}") }
+            for e in errors { _e += &format!(" {e:?}") }
             return Err(_e.into());
         }
 
         Ok(())
     }
 
-    pub fn rename_tag(&mut self, old_name: &str, new_name: String) -> Result_<()> {
+    pub fn rename_tag(&mut self, old_name: &str, new_name: String) -> ResultBtAny<()> {
         let tag_inode = self.tags.get_by_name(old_name)
             .ok_or(format!("Tag `{old_name}` does not exist"))?
             .inode;
@@ -409,7 +409,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
-    pub fn insert_namespace(&mut self, namespace_string: String) -> Result_<NamespaceInode> {
+    pub fn insert_namespace(&mut self, namespace_string: String) -> ResultBtAny<NamespaceInode> {
         let namespace_tags = parse_tags(&namespace_string);
 
         let mut _namespace_tags = TagInodes::new(); 
@@ -431,7 +431,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     
     pub fn remove_file_by_name_and_tags<'a>(&mut self, file_name: &str,
         tag_inodes: impl Into<&'a TagInodes>)
-    -> Result_<TfsFile> {
+    -> ResultBtAny<TfsFile> {
         let tag_inodes = tag_inodes.into();
         let removed_file = self.files.remove_by_name_and_tags(file_name, tag_inodes)
             .ok_or(format!("No file matching name `{file_name}` and tag inodes \
@@ -441,7 +441,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     #[instrument(skip_all, fields(?tag_name))]
-    pub fn delete_tag(&mut self, tag_name: &str) -> Result_<TfsTag> {
+    pub fn delete_tag(&mut self, tag_name: &str) -> ResultBtAny<TfsTag> {
         let removed_tag = self.tags.remove_by_name(&tag_name)
             .ok_or(format!("Tag `{tag_name}` does not exist."))?;
         let tag_sets: Vec<_> = self.files.get_tag_sets()

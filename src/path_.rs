@@ -1,14 +1,14 @@
 use std::{collections::HashSet, path::PathBuf};
 
-use crate::errors::Result_;
+use crate::errors::ResultBtAny;
 
 pub trait PathBufExt {
-    fn add_tags(&mut self, to_add: &str) -> Result_<()>;
-    fn subtract_tags(&mut self, to_subtract: &str) -> Result_<()>;
+    fn add_tags(&mut self, to_add: &str) -> ResultBtAny<()>;
+    fn subtract_tags(&mut self, to_subtract: &str) -> ResultBtAny<()>;
 }
 
 impl PathBufExt for PathBuf {
-    fn add_tags(&mut self, to_add: &str) -> Result_<()> {
+    fn add_tags(&mut self, to_add: &str) -> ResultBtAny<()> {
         let mut current_tags: HashSet<_> = get_current_tags(self)?
             .collect();
 
@@ -19,7 +19,7 @@ impl PathBufExt for PathBuf {
         Ok(())
     }
 
-    fn subtract_tags(&mut self, to_subtract: &str) -> Result_<()> {
+    fn subtract_tags(&mut self, to_subtract: &str) -> ResultBtAny<()> {
         let mut current_tags: HashSet<_> = get_current_tags(self)?
             .collect();
 
@@ -33,7 +33,7 @@ impl PathBufExt for PathBuf {
     }
 }
 
-pub fn get_current_tags(path: &PathBuf) -> Result_<impl Iterator<Item = &str>> {
+pub fn get_current_tags(path: &PathBuf) -> ResultBtAny<impl Iterator<Item = &str>> {
     let current_tags = path.file_name()
         .or_else(|| path.parent()
             .and_then(|parent| parent.file_name()))

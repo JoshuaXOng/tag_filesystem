@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, time::SystemTime};
 use bon::{builder, Builder};
 use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::Result_, inodes::TagInode, wrappers::write_iter};
+use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::TagInode, wrappers::write_iter};
 
 #[derive(Builder, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[builder(on(String, into))]
@@ -87,7 +87,7 @@ impl IndexedTags {
         self.tags.get(tag_inode)
     }
 
-    pub fn get_by_inode_id(&self, inode_id: u64) -> Result_<&TfsTag> {
+    pub fn get_by_inode_id(&self, inode_id: u64) -> ResultBtAny<&TfsTag> {
         let tag_inode = TagInode::try_from(inode_id)?;
         self.tags.get(&tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist.").into())
@@ -119,18 +119,18 @@ impl IndexedTags {
         self.tags.keys().collect()
     }
 
-    pub fn get_free_inode(&self) -> Result_<TagInode> {
+    pub fn get_free_inode(&self) -> ResultBtAny<TagInode> {
         let inodes_inuse = self.get_inuse_inodes();
         TagInode::try_from_free_inodes(inodes_inuse)
     }
 
     pub fn do_by_inode<T>(&mut self, tag_inode: &TagInode, to_do: impl FnOnce(TagUpdate) -> T)
-    -> Result_<T> {
+    -> ResultBtAny<T> {
         self.do_or_rollback(tag_inode, to_do)
     }
 
     pub fn do_by_name<T>( &mut self, tag_name: &str, to_do: impl FnOnce(TagUpdate) -> T)
-    -> Result_<T> {
+    -> ResultBtAny<T> {
         let target_inode = *self.by_name.get(tag_name)
             .ok_or(format!(
                 "Tag with name `{tag_name}` does not exist."))?;
@@ -138,7 +138,7 @@ impl IndexedTags {
     }
 
     fn do_or_rollback<T>(&mut self, tag_inode: &TagInode, to_do: impl FnOnce(TagUpdate) -> T)
-    -> Result_<T> {
+    -> ResultBtAny<T> {
         let mut target_tag = self.remove_by_inode(tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist."))?;
         let callback_return = to_do(TagUpdate {
@@ -157,12 +157,12 @@ impl IndexedTags {
         Ok(callback_return)
     }
 
-    fn will_collide(&self, check_for: &TfsTag) -> Result_<()> {
+    fn will_collide(&self, check_for: &TfsTag) -> ResultBtAny<()> {
         Self::_will_collide(&self.tags, &self.by_name, &check_for.inode, &check_for.name)
     }
 
     fn _will_collide(tags: &ByInode, by_name: &ByName, inode: &TagInode, name: &str)
-    -> Result_<()> {
+    -> ResultBtAny<()> {
         let does_inode = tags.contains_key(&inode);
         let does_name = by_name.contains_key(name);
         if does_inode || does_name {
@@ -172,7 +172,7 @@ impl IndexedTags {
         Ok(())
     }
 
-    pub fn add(&mut self, to_add: TfsTag) -> Result_<&TfsTag> {
+    pub fn add(&mut self, to_add: TfsTag) -> ResultBtAny<&TfsTag> {
         self.will_collide(&to_add)?;
         Ok(self.add_unchecked(to_add))
     }
@@ -222,7 +222,7 @@ pub struct TagUpdate<'a, 'b> {
 }
 
 impl<'a, 'b> TagUpdate<'a, 'b> {
-    pub fn try_set_name(&mut self, name: String) -> Result_<()> {
+    pub fn try_set_name(&mut self, name: String) -> ResultBtAny<()> {
         let original = self.name.clone();
         *self.name = name;
         if let Err(e) = self.will_collide() {
@@ -232,7 +232,7 @@ impl<'a, 'b> TagUpdate<'a, 'b> {
         Ok(())
     }
 
-    pub fn try_set_inode(&mut self, inode: TagInode) -> Result_<()> {
+    pub fn try_set_inode(&mut self, inode: TagInode) -> ResultBtAny<()> {
         let original = self.inode.clone();
         *self.inode = inode;
         if let Err(e) = self.will_collide() {
@@ -242,7 +242,7 @@ impl<'a, 'b> TagUpdate<'a, 'b> {
         Ok(())
     }
 
-    fn will_collide(&self) -> Result_<()> {
+    fn will_collide(&self) -> ResultBtAny<()> {
         IndexedTags::_will_collide(&self.tags, &self.by_name, self.inode, self.name)
     }
 }

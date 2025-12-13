@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display, time::SystemTime};
 
 use fuser::{FileAttr, FileType};
 
-use crate::{errors::Result_, inodes::{NamespaceInode, TagInodes, ANY_NAMESPACE_INODE},
+use crate::{errors::ResultBtAny, inodes::{NamespaceInode, TagInodes, ANY_NAMESPACE_INODE},
     wrappers::write_iter};
 
 #[derive(Debug)]
@@ -45,12 +45,12 @@ impl IndexedNamepsaces {
         }
     }
 
-    pub fn get_by_inode(&self, namespace_inode: &NamespaceInode) -> Result_<&TfsNamespace> {
+    pub fn get_by_inode(&self, namespace_inode: &NamespaceInode) -> ResultBtAny<&TfsNamespace> {
         self.namespaces.get(&namespace_inode)
             .ok_or(Self::get_namespace_404_message(namespace_inode).into())
     }
 
-    pub fn get_by_inode_id(&self, inode_id: u64) -> Result_<&TfsNamespace> {
+    pub fn get_by_inode_id(&self, inode_id: u64) -> ResultBtAny<&TfsNamespace> {
         let namespace_inode = NamespaceInode::try_from(inode_id)?;
         self.namespaces.get(&namespace_inode)
             .ok_or(format!("Namespace with inode `{namespace_inode}` does not \
@@ -58,7 +58,7 @@ impl IndexedNamepsaces {
     }
 
     pub fn get_by_inode_mut(&mut self, namespace_inode: &NamespaceInode)
-    -> Result_<NamespaceUpdate<'_>> {
+    -> ResultBtAny<NamespaceUpdate<'_>> {
         Ok(self.namespaces
             .get_mut(&namespace_inode)
             .ok_or(Self::get_namespace_404_message(namespace_inode))?

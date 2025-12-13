@@ -4,7 +4,7 @@ use bon::Builder;
 use clap::Parser;
 use tracing::info;
 
-use crate::{errors::Result_, path_::{format_tags, get_current_tags}, wrappers::StrExt};
+use crate::{errors::ResultBtAny, path_::{format_tags, get_current_tags}, wrappers::StrExt};
 
 #[derive(Parser, PartialEq, Debug)]
 pub struct ChangeParameters {
@@ -14,7 +14,7 @@ pub struct ChangeParameters {
 }
 
 impl ChangeParameters {
-    pub fn run(&self) -> Result_<()> {
+    pub fn run(&self) -> ResultBtAny<()> {
         println!("{}", get_changed_path(&self)?.to_string_lossy());
         Ok(())
     }
@@ -45,7 +45,7 @@ impl FromStr for ChangeTag {
     }
 }
 
-pub fn get_changed_path(change_arguments: &ChangeParameters) -> Result_<PathBuf> {
+pub fn get_changed_path(change_arguments: &ChangeParameters) -> ResultBtAny<PathBuf> {
     let mut current_path = current_dir()?;
     info!("Current path is `{}`.", current_path.to_string_lossy());
 

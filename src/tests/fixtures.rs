@@ -6,9 +6,9 @@ use tracing::{info, instrument};
 use mount_watcher::{MountWatcher, WatchControl};
 use tempfile::tempdir;
 
-use crate::{errors::{AnyError, Result_}, filesystem::TagFilesystem};
+use crate::{errors::{AnyError, ResultBtAny}, filesystem::TagFilesystem};
 
-pub fn with_tfs_mount(to_do: impl FnOnce(&PathBuf) -> Result_<()>) -> Result_<()> {
+pub fn with_tfs_mount(to_do: impl FnOnce(&PathBuf) -> ResultBtAny<()>) -> ResultBtAny<()> {
     let expectation = "Test setup code should work."; 
     let setup_payload = fuse_setup()
         .expect(expectation);
@@ -20,7 +20,7 @@ pub fn with_tfs_mount(to_do: impl FnOnce(&PathBuf) -> Result_<()>) -> Result_<()
     Ok(())
 }
 
-type FusePayload = (PathBuf, JoinHandle<Result_<()>>);
+type FusePayload = (PathBuf, JoinHandle<ResultBtAny<()>>);
 
 #[instrument]
 fn fuse_setup() -> Result<FusePayload, Box<(dyn Error + 'static)>> {
@@ -47,7 +47,7 @@ fn fuse_setup() -> Result<FusePayload, Box<(dyn Error + 'static)>> {
     })?;
 
     let temporary_directory_ = temporary_directory.clone();
-    let mount_handle: JoinHandle<Result_<()>> = thread::spawn(move || {
+    let mount_handle: JoinHandle<ResultBtAny<()>> = thread::spawn(move || {
         info!("Mounting at `{temporary_directory_:?}`.");
         Ok(mount2(
             TagFilesystem::try_new(&temporary_directory_)?,
@@ -65,7 +65,7 @@ fn fuse_setup() -> Result<FusePayload, Box<(dyn Error + 'static)>> {
 }
 
 #[instrument]
-fn fuse_cleanup((mount_directory, mount_handle): FusePayload) -> Result_<()> {
+fn fuse_cleanup((mount_directory, mount_handle): FusePayload) -> ResultBtAny<()> {
     info!("Running cleanup for FUSE FS, unmounting at `{:?}`.",
         mount_directory);
     let umount_process = Command::new("umount")

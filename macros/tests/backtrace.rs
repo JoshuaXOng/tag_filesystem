@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(unused))]
 
-use std::{env, error::Error, fmt::Display, io::Error as IoError, sync::OnceLock};
+use std::{env, error::Error, fmt::Display, sync::OnceLock};
 
 // TODO: What, how is this possible?
 use derive_more::{Display, Error};
@@ -235,7 +235,7 @@ fn running_external_to_bt_dyn() {
 const EXT2BTDYN_DEBUG: &str = r#"Custom { kind: Other, error: "test" }"#;
 const EXT2BTDYN_LINE: u32 = line!() + 3;
 fn external_to_bt_dyn() -> Result<(), WithBacktrace<Box<dyn Error>>> {
-    let e = IoError::other("test");
+    let e = std::io::Error::other("test");
     Err(e)?;
     Ok(())
 }
@@ -303,18 +303,48 @@ fn running_bt_external_to_bt_dyn() {
 const BTEXT2BTDYN_DEBUG: &str = r#"Custom { kind: Other, error: "test" }"#;
 const BTEXT2BTDYN_LINE: u32 = line!() + 2;
 fn bt_external_to_bt_dyn() -> Result<(), WithBacktrace<Box<dyn Error>>> {
-    let e = WithBacktrace::new(IoError::other("test"));
+    let e = WithBacktrace::new(std::io::Error::other("test"));
     Err(e)?;
+    Ok(())
+}
+
+#[test]
+#[traced_test]
+fn running_map_err_inner() {
+    enable_backtrace();
+
+    let backtraced_result = assembling_food(); let e_line = line!();
+    info!("{:?}", backtraced_result);
+    assert!(logs_contain(r#"error: "Could not cook bagel. The bagel cannot have peas.""#));
+    assert!(logs_contain(&format!(r#"{{ fn: "{MODULE_NAME}::{BAGEL_FUNCTION}", file: "./tests/{MODULE_NAME}.rs", line: {BAGEL_LINE} }}"#)));
+    assert!(logs_contain(&format!(r#"{{ fn: "{MODULE_NAME}::{FOOD_FUNCTION}", file: "./tests/{MODULE_NAME}.rs", line: {FOOD_LINE} }}"#)));
+    assert!(logs_contain(&format!(r#"{{ fn: "{MODULE_NAME}::running_map_err_inner", file: "./tests/{MODULE_NAME}.rs", line: {e_line} }}"#)));
+}
+
+const FOOD_FUNCTION: &str = "assembling_food";
+const FOOD_LINE: u32 = line!() + 2;
+fn assembling_food() -> Result<(), WithBacktrace<Box<dyn Error + Send + Sync>>> {
+    assembling_bagel()
+        .map_err_inner(|e| format!("Could not cook bagel. {}", e))?;
+    Ok(())
+}
+
+const BAGEL_FUNCTION: &str = "assembling_bagel";
+const BAGEL_LINE: u32 = line!() + 2;
+fn assembling_bagel() -> Result<(), WithBacktrace<Box<dyn Error + Send + Sync>>> {
+    Err("The bagel cannot have peas.")?;
     Ok(())
 }
 
 define_with_backtrace!();
 
-define_to_dyn!(IoError);
+define_to_dyn!(&str);
+define_to_dyn!(String);
+define_to_dyn!(std::io::Error);
 
 #[derive(Debug, Display, Error, Backtrace)]
 #[display("ErrorA")]
-#[bt_from(ErrorB, ErrorC, IoError)]
+#[bt_from(ErrorB, ErrorC, std::io::Error)]
 struct ErrorA;
 
 impl From<ErrorB> for ErrorA {
@@ -329,8 +359,8 @@ impl From<ErrorC> for ErrorA {
     }
 }
 
-impl From<IoError> for ErrorA {
-    fn from(_: IoError) -> Self {
+impl From<std::io::Error> for ErrorA {
+    fn from(_: std::io::Error) -> Self {
         ErrorA
     }
 }
@@ -343,6 +373,6 @@ struct ErrorB;
 #[display("ErrorC::{_variant}")]
 enum ErrorC {
     #[display("One({_0})")]
-    One(Box<dyn Error>),
+    One(Box<dyn Error + Send + Sync>),
     Two
 }

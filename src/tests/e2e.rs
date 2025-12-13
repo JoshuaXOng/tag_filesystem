@@ -6,7 +6,7 @@ use clap::Parser;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
-use crate::{errors::Result_, tests::{fixtures::with_tfs_mount, tracing_::setup_tracing},
+use crate::{errors::ResultBtAny, tests::{fixtures::with_tfs_mount, tracing_::setup_tracing},
     wrappers::VecWrapper};
 
 #[test]
@@ -434,11 +434,11 @@ fn doing_random_chained_interactions() {
 }
 
 trait CommandExt {
-    fn run_and_log(&mut self) -> Result_<String>;
+    fn run_and_log(&mut self) -> ResultBtAny<String>;
 }
 
 impl CommandExt for Command {
-    fn run_and_log(&mut self) -> Result_<String> {
+    fn run_and_log(&mut self) -> ResultBtAny<String> {
         println!("> {} {}", 
             self.get_program().to_string_lossy(),
             VecWrapper(self.get_args()

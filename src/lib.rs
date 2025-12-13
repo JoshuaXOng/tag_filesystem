@@ -4,6 +4,8 @@ capnp::generated_code!(pub mod filesystem_capnp);
 capnp::generated_code!(pub mod file_capnp);
 capnp::generated_code!(pub mod tag_capnp);
 
+drums::define_with_backtrace!();
+
 pub mod cli;
 pub mod entries;
 pub mod errors;

@@ -16,6 +16,7 @@ askama = "0.14.0"
 bon = "3.8.1"
 capnp = "0.23.0"
 clap = { version = "4.5.47", features = ["derive", "string"] }
+derive_more = { version = "2.1.0", features = ["display", "error"] }
 drums = { path = "macros" }
 file-rotate = "0.8.0"
 fuser = "0.15.1"

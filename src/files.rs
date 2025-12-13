@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet}, fmt::Display, time::SystemTime};
 use bon::Builder;
 use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::Result_, inodes::{FileInode, TagInodes}, unwrap_or,
+use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{FileInode, TagInodes}, unwrap_or,
     wrappers::{write_btreeset, write_iter, VecWrapper}};
 
 // TODO: Figure out eval steps. File inheriting perms
@@ -103,7 +103,7 @@ impl IndexedFiles {
         self.files.get(file_inode)
     }
 
-    pub fn get_by_inode_id(&self, inode_id: u64) -> Result_<&TfsFile> {
+    pub fn get_by_inode_id(&self, inode_id: u64) -> ResultBtAny<&TfsFile> {
         let file_inode = FileInode::try_from(inode_id)?;
         self.files.get(&file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist.").into())
@@ -183,19 +183,19 @@ impl IndexedFiles {
         self.files.keys().collect()
     }
 
-    pub fn get_free_inode(&self) -> Result_<FileInode> {
+    pub fn get_free_inode(&self) -> ResultBtAny<FileInode> {
         let inodes_inuse = self.get_inuse_inodes();
         FileInode::try_from_free_inodes(inodes_inuse)
     }
 
-    fn will_collide(&self, check_for: &TfsFile) -> Result_<()> {
+    fn will_collide(&self, check_for: &TfsFile) -> ResultBtAny<()> {
         Self::_will_collide(&self.files, &self.by_tags, &self.by_name_and_tags,
             &check_for.name, &check_for.inode, &check_for.tags)
     }
 
     fn _will_collide(files: &ByInode, by_tags: &ByTags, by_name_and_tags: &ByNameAndTags,
         name: &str, inode: &FileInode, tags: &TagInodes
-    ) -> Result_<()> {
+    ) -> ResultBtAny<()> {
         let does_inode = files.contains_key(&inode);
         let do_tags = by_tags.get(&tags)
             .map(|inodes| inodes.contains(&inode))
@@ -210,13 +210,13 @@ impl IndexedFiles {
     }
 
     pub fn do_by_inode<T>(&mut self, file_inode: &FileInode, to_do: impl FnOnce(FileUpdate) -> T)
-    -> Result_<T> {
+    -> ResultBtAny<T> {
         self.do_or_rollback(file_inode, to_do)
     }
 
     pub fn do_by_tags<T>(&mut self, file_tags: &TagInodes,
         to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T
-    ) -> Result_<T> {
+    ) -> ResultBtAny<T> {
         let target_inodes = self.by_tags.get(file_tags)
             .ok_or(format!("No files with tags `{file_tags}`."))?
             .clone();
@@ -227,7 +227,7 @@ impl IndexedFiles {
 
     pub fn do_by_name_and_tags<T>(&mut self, file_name: &str, file_tags: &TagInodes,
         to_do: impl FnOnce(FileUpdate) -> T
-    ) -> Result_<T> {
+    ) -> ResultBtAny<T> {
         let target_inode = *self.by_name_and_tags.get(&(
             file_name.to_string(),
             file_tags.clone()))
@@ -238,7 +238,7 @@ impl IndexedFiles {
     }
 
     fn do_or_rollback<T>(&mut self, file_inode: &FileInode, to_do: impl FnOnce(FileUpdate) -> T)
-    -> Result_<T> {
+    -> ResultBtAny<T> {
         let mut target_file = self.remove_by_inode(file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist."))?;
         let callback_return = to_do(FileUpdate {
@@ -262,7 +262,7 @@ impl IndexedFiles {
     // TODO: For other methods and this, return iter instead of Vec, Hashset?
     fn do_or_partial_rollback_bulk<T>(&mut self, file_inodes: &HashSet<FileInode>,
         mut to_do: impl FnMut(FileUpdate) -> T)
-    -> Result_<HashMap<FileInode, T>> {
+    -> ResultBtAny<HashMap<FileInode, T>> {
         let dont_exist = file_inodes.iter()
             .filter(|inode| self.get_by_inode(inode)
                 .is_none())
@@ -283,7 +283,7 @@ impl IndexedFiles {
 
     fn do_or_complete_rollback_bulk<T>(&mut self, file_inodes: &HashSet<FileInode>,
         to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T)
-    -> Result_<T> {
+    -> ResultBtAny<T> {
         let dont_exist = file_inodes.iter()
             .filter(|inode| self.get_by_inode(inode)
                 .is_none())
@@ -320,7 +320,7 @@ impl IndexedFiles {
         Ok(callback_return)
     }
 
-    pub fn add(&mut self, to_add: TfsFile) -> Result_<&TfsFile> {
+    pub fn add(&mut self, to_add: TfsFile) -> ResultBtAny<&TfsFile> {
         self.will_collide(&to_add)?;
         Ok(self.add_unchecked(to_add))
     }
@@ -395,7 +395,7 @@ pub struct FileUpdate<'a, 'b> {
 }
 
 impl<'a, 'b> FileUpdate<'a, 'b> {
-    pub fn try_set_name(&mut self, name: String) -> Result_<()> {
+    pub fn try_set_name(&mut self, name: String) -> ResultBtAny<()> {
         let original = self.name.clone();
         *self.name = name;
         if let Err(e) = self.will_collide() {
@@ -405,7 +405,7 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
         Ok(())
     }
 
-    pub fn try_set_inode(&mut self, inode: FileInode) -> Result_<()> {
+    pub fn try_set_inode(&mut self, inode: FileInode) -> ResultBtAny<()> {
         let original = self.inode.clone();
         *self.inode = inode;
         if let Err(e) = self.will_collide() {
@@ -415,7 +415,7 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
         Ok(())
     }
 
-    pub fn try_set_tags(&mut self, tags: TagInodes) -> Result_<()> {
+    pub fn try_set_tags(&mut self, tags: TagInodes) -> ResultBtAny<()> {
         let original = self.tags.clone();
         *self.tags = tags;
         if let Err(e) = self.will_collide() {
@@ -425,7 +425,7 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
         Ok(())
     }
 
-    fn will_collide(&self) -> Result_<()> {
+    fn will_collide(&self) -> ResultBtAny<()> {
         IndexedFiles::_will_collide(&self.files, &self.by_tags, &self.by_name_and_tags,
             &self.name, &self.inode, &self.tags)
     }

@@ -4,7 +4,7 @@ pub mod tags;
 use std::fs::create_dir_all;
 
 use clap::{Parser, Subcommand};
-use crate::{cli::{mount::MountParameters, tags::TagsParameters}, errors::Result_,
+use crate::{cli::{mount::MountParameters, tags::TagsParameters}, errors::ResultBtAny,
     path_::get_configuration_directory};
 
 #[derive(Parser, Debug)]
@@ -16,7 +16,7 @@ pub struct ProgramParameters {
 }
 
 impl ProgramParameters {
-    pub fn run(&self) -> Result_<()> {
+    pub fn run(&self) -> ResultBtAny<()> {
         let configuration_directory = get_configuration_directory();
         create_dir_all(configuration_directory)?;
 

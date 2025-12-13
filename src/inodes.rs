@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, fmt::Display};
 use fuser::FUSE_ROOT_ID;
 use rand::random_range;
 
-use crate::{errors::{AnyError, Result_}, unwrap_or, wrappers::write_btreeset};
+use crate::{errors::{AnyError, ResultBtAny}, unwrap_or, wrappers::write_btreeset, WithBacktrace};
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub struct FileInode {
@@ -14,7 +14,7 @@ impl FileInode {
     pub fn get_id(&self) -> u64 { self.id }
 
     pub fn try_from_free_inodes<T>(inodes_inuse: Vec<&T>)
-    -> Result_<T> where T: TryFrom<u64> + PartialEq + Ord {
+    -> ResultBtAny<T> where T: TryFrom<u64> + PartialEq + Ord {
         loop {
             let inode_id = (random_range(
                 NAMESPACE_INODE_END + 2..=(u64::MAX / 2)) * 2) - 1;
@@ -29,7 +29,7 @@ impl FileInode {
 }
 
 impl TryFrom<u64> for FileInode {
-    type Error = AnyError;
+    type Error = WithBacktrace<AnyError>;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         if !get_is_inode_a_file(value) {
@@ -56,7 +56,7 @@ impl TagInode {
     pub fn get_id(&self) -> u64 { self.id }
 
     pub fn try_from_free_inodes<T>(inodes_inuse: Vec<&T>)
-    -> Result_<T> where T: TryFrom<u64> + PartialEq + Ord {
+    -> ResultBtAny<T> where T: TryFrom<u64> + PartialEq + Ord {
         loop {
             let inode_id = random_range(
                 NAMESPACE_INODE_END + 1..=(u64::MAX / 2)) * 2;
@@ -71,7 +71,7 @@ impl TagInode {
 }
 
 impl TryFrom<u64> for TagInode {
-    type Error = AnyError;
+    type Error = WithBacktrace<AnyError>;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         if !get_is_inode_a_tag(value) {
@@ -145,7 +145,7 @@ impl Display for NamespaceInode {
 }
 
 impl TryFrom<u64> for NamespaceInode {
-    type Error = AnyError;
+    type Error = WithBacktrace<AnyError>;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         if !get_is_inode_a_namespace(value) {

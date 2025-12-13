@@ -3,7 +3,7 @@ use std::{env::current_exe, fs::canonicalize, path::PathBuf};
 use askama::Template;
 use clap::Args;
 
-use crate::{cli::ProgramParameters, errors::{AnyError, Result_}};
+use crate::{cli::ProgramParameters, errors::{AnyError, ResultBtAny}};
 
 #[derive(Args, Debug)]
 pub struct SystemdParamereters {
@@ -11,7 +11,7 @@ pub struct SystemdParamereters {
 }
 
 impl SystemdParamereters {
-    pub fn run(&self, _program_arguments: &ProgramParameters) -> Result_<()> {
+    pub fn run(&self, _program_arguments: &ProgramParameters) -> ResultBtAny<()> {
         // TODO: To implement, something like below.
         // let service_configuration = ServiceTemplate::try_from(self)?
         //     .render()?;

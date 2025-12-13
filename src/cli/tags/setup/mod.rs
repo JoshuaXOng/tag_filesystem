@@ -4,7 +4,7 @@ use askama::Template;
 use clap::Parser;
 use tracing::info;
 
-use crate::{cli::ProgramParameters, errors::{AnyError, Result_}, path_::get_configuration_directory};
+use crate::{cli::ProgramParameters, errors::{AnyError, ResultBtAny}, path_::get_configuration_directory};
 
 #[derive(Parser, Debug)]
 pub struct SetupParameters {
@@ -19,7 +19,7 @@ pub struct SetupParameters {
 pub const DEFAULT_SCRIPT_NAME : &str = "change_tags.sh";
 
 impl SetupParameters {
-    pub fn run(&self, program_arguments: &ProgramParameters) -> Result_<()> {
+    pub fn run(&self, program_arguments: &ProgramParameters) -> ResultBtAny<()> {
         let script_content = ChangeTemplate::try_from(self)?
             .render()?;
 
