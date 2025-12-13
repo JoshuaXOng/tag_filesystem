@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{info, instrument};
 
-use crate::{errors::{AnyError, ResultBt, ResultBtAny, Result_},
+use crate::{errors::{AnyError, ResultBt, ResultBtAny, ResultBtAny_},
     path_::get_configuration_directory, wrappers::PathExt};
 
 pub(crate) trait TfsSnapshots {
@@ -47,7 +47,7 @@ impl PersistentSnapshots {
     const SHA512_FILENAME: &str = "tfs.snapshot.sha256";
 
     #[instrument]
-    pub fn try_new(location_suffix: &PathBuf) -> Result_<Self> {
+    pub fn try_new(location_suffix: &PathBuf) -> ResultBtAny_<Self> {
         let snapshot_directory = get_configuration_directory()
             .join(Self::SNAPSHOT_DIRECTORY_NAME)
             .join(location_suffix.__strip_prefix("/"));
@@ -83,14 +83,14 @@ impl PersistentSnapshots {
         self.root.join(Self::POINTERS_FILENAME)
     }
 
-    fn get_snapshot_pointers(&self) -> Result_<SnapshotPointers> {
+    fn get_snapshot_pointers(&self) -> ResultBtAny_<SnapshotPointers> {
         let to_read = self.get_pointers_path();
         let as_json = &fs::read(&to_read)?;
         info!("Read snapshot pointers file, `{}`.", to_read.to_string_lossy());
         Ok(serde_json::from_slice(as_json)?)
     }
 
-    fn get_opposite_snapshot_path(&self) -> Result_<PathBuf> {
+    fn get_opposite_snapshot_path(&self) -> ResultBtAny_<PathBuf> {
         let snapshot_pointers = self.get_snapshot_pointers()?;
         let to_snapshot = if let Some(mut to_snapshot) = snapshot_pointers.snapshot {
             PointerChoice::switch_extension(&mut to_snapshot)?;
@@ -101,7 +101,7 @@ impl PersistentSnapshots {
         Ok(to_snapshot)
     }
 
-    fn get_opposite_sha256_path(&self) -> Result_<PathBuf> {
+    fn get_opposite_sha256_path(&self) -> ResultBtAny_<PathBuf> {
         let snapshot_pointers = self.get_snapshot_pointers()?;
         let to_sha256 = if let Some(mut to_sha256) = snapshot_pointers.sha256 {
             PointerChoice::switch_extension(&mut to_sha256)?;
@@ -127,7 +127,7 @@ impl PersistentSnapshots {
     }
 
     fn get_sha256_from(file_path: &Path, result_container: &mut Vec<u8>)
-    -> Result_<()> {
+    -> ResultBtAny_<()> {
         let sha256_digest = Sha256::digest(fs::read(&file_path)?);
         result_container.write_all(sha256_digest.as_slice())?;
         info!("Wrote SHA-256 to container.");
@@ -210,13 +210,13 @@ struct SnapshotPointers {
 }
 
 impl SnapshotPointers {
-    fn get_snapshot(&self) -> Result_<PathBuf> {
+    fn get_snapshot(&self) -> ResultBtAny_<PathBuf> {
         self.snapshot
             .clone()
             .ok_or("Pointer to snapshot not yet initialized.".into())
     }
 
-    fn get_sha256(&self) -> Result_<PathBuf> {
+    fn get_sha256(&self) -> ResultBtAny_<PathBuf> {
         self.sha256
             .clone()
             .ok_or("Pointer to snapshot checksum not yet initialized.".into())
@@ -239,7 +239,7 @@ impl PointerChoice {
         }
     }
 
-    fn switch_extension(path: &mut PathBuf) -> Result_<()> {
+    fn switch_extension(path: &mut PathBuf) -> ResultBtAny_<()> {
         let other_extension = match path.extension()
             .map(|extension| extension.to_str().unwrap_or(""))
         {

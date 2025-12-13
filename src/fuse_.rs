@@ -25,6 +25,18 @@ macro_rules! return_error {
     }}
 }
 
+// TODO/WIP
+macro_rules! returne {
+    ($reply: ident, $error_code: expr, $log_level: ident, $error_message: expr, $($message_arguments: expr), *) => {{
+        $log_level!($error_message, $($message_arguments), *);
+        $reply.error($error_code);
+        return;
+    }};
+    ($reply: ident, $error_code: expr, $log_level: ident, $error_message: expr) => {{
+        returne!($reply, $error_code, $log_level, $error_message,)
+    }};
+}
+
 // TODO: Some reply.error should not really log as an error.
 
 // TODO: Sometimes the below error for `ct tag_2` when tag2 does exist.
@@ -56,23 +68,23 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let new_file = TfsFile::builder()
             .name(file_name.clone())
             .inode(unwrap_or!(self.get_free_file_inode(),
-                e, return_error!("{e}", reply, ENOENT)))
+                e, return_error!("{e:?}", reply, ENOENT)))
             .owner(request.uid())
             .group(request.gid());
 
         if get_is_inode_root(parent_inode) {
             let new_file = unwrap_or!(self.add_file(new_file.build()),
-                e, return_error!("{e}", reply, EINVAL));
+                e, return_error!("{e:?}", reply, EINVAL));
             let file_inode = new_file.inode;
             let fuser_attributes = unwrap_or!(self.get_file_fuser(&file_inode),
-                e, return_error!("{e}", reply, ENOENT));
+                e, return_error!("{e:?}", reply, ENOENT));
             reply.created(&ANY_TTL, &fuser_attributes, generation, fh, flags);
             info!("Created.");
             return;
         }
 
         let namespace_inode = unwrap_or!(NamespaceInode::try_from(parent_inode),
-            e, return_error!("{e}", reply, ENOENT));
+            e, return_error!("{e:?}", reply, ENOENT));
         let tfs_namespace = unwrap_or!(self.get_namespaces()
             .get_map()
             .get(&namespace_inode), 
@@ -81,10 +93,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
 
         let new_file = new_file.tags(tfs_namespace.tags.clone());
         let new_file = unwrap_or!(self.add_file(new_file.build()),
-            e, return_error!("{e}", reply, ENOENT));
+            e, return_error!("{e:?}", reply, ENOENT));
         let file_inode = new_file.inode; // TODO: Why is this needed... ughh
         let fuser_attributes = unwrap_or!(self.get_file_fuser(&file_inode),
-            e, return_error!("{e}", reply, ENOENT)); // TODO: More appropriate error code.
+            e, return_error!("{e:?}", reply, ENOENT)); // TODO: More appropriate error code.
         reply.created(&ANY_TTL, &fuser_attributes, generation, fh, flags);
         info!("Created.");
     }
@@ -111,15 +123,15 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let new_tag = TfsTag::builder()
             .name(tag_name)
             .inode(unwrap_or!(self.get_free_tag_inode(),
-                e, return_error!("No free tag inode. {e}", reply, EINVAL)))
+                e, return_error!("No free tag inode. {e:?}", reply, EINVAL)))
             .owner(request.uid())
             .group(request.gid())
             .build();
         let new_tag = unwrap_or!(self.add_tag(new_tag),
-            e, return_error!("{e}", reply, ENOENT));
+            e, return_error!("{e:?}", reply, ENOENT));
         let tag_inode = new_tag.inode;
         let fuser_attributes = unwrap_or!(self.get_tag_fuser(&tag_inode),
-            e, return_error!("{e}", reply, ENOENT));
+            e, return_error!("{e:?}", reply, ENOENT));
         let generation = 0;
         reply.entry(&ANY_TTL, &fuser_attributes, generation);
         info!("Created.");
@@ -135,7 +147,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         if get_is_inode_root(parent_inode) {
             if get_is_a_namespace(&predicate) {
                 let namespace_inode = unwrap_or!(self.insert_namespace(predicate),
-                    e, return_error!("Namespace lookup failed. {e}", reply, ENOENT));
+                    e, return_error!("Namespace lookup failed. {e:?}", reply, ENOENT));
                 reply.entry(&NO_TTL, &namespaces::get_fuse_attributes(&namespace_inode), 0);
                 info!("Finished namespace lookup under root.");
                 return;
@@ -152,7 +164,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
                     nor an untagged file.", reply, ENOENT));
 
             let fuser_attributes = unwrap_or!(self.get_fuser_attributes(target_inode),
-                e, return_error!("{e}", reply, ENOENT));
+                e, return_error!("{e:?}", reply, ENOENT));
             reply.entry(&ANY_TTL, &fuser_attributes, 0);
             info!("Finished tag/file lookup under root.");
             // TODO: See if setting query to None after this is appropriate.
@@ -172,7 +184,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
                 .or(self.get_file_by_name_and_namespace_inode(&predicate, &parent_namespace.inode)
                     .and_then(|file| self.get_file_fuser(&file.inode))),
                 e, return_error!("Tag/file lookup failed, `{predicate}` is not \
-                    a tag not a file under inode `{parent_inode}`. {e}", reply, ENOENT));
+                    a tag not a file under inode `{parent_inode}`. {e:?}", reply, ENOENT));
             // TODO: no magic variables.
             let generation = 0;
             reply.entry(&NO_TTL, &fuser, generation);
@@ -262,17 +274,17 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
 
         let current_namespace = unwrap_or!(
             self.get_namespaces().get_by_inode_id(inode_id),
-            e, return_error!("Could not get namespace. {e}", reply, EINVAL));
+            e, return_error!("Could not get namespace. {e:?}", reply, EINVAL));
 
         let mut inrange_tags = unwrap_or!(self.get_inrange_tags(current_namespace),
-            e, return_error!("Could not get inrange tags. {e}", reply, EINVAL));
+            e, return_error!("Could not get inrange tags. {e:?}", reply, EINVAL));
         inrange_tags.sort();
         let inrange_tags = inrange_tags.into_iter()
             .map(|tag| tag as &dyn TfsEntry);
 
         let mut inscope_files = unwrap_or!(
             self.get_files_by_namespace_inode(&current_namespace.inode),
-            e, return_error!("Could not get files under namespace. {e}", reply, EINVAL));
+            e, return_error!("Could not get files under namespace. {e:?}", reply, EINVAL));
         inscope_files.sort();
         let inscope_files = inscope_files.into_iter()
             .map(|file| file as &dyn TfsEntry);
@@ -300,7 +312,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         reply: ReplyData)
     {
         let file_inode: FileInode = unwrap_or!(target_inode.try_into(),
-            e, return_error!("Not a file inode. {e}", reply, EINVAL));
+            e, return_error!("Not a file inode. {e:?}", reply, EINVAL));
         let start_position: u64 = unwrap_or!(start_position.try_into(),
             e, return_error!("Offset value can't be converted. {e}", reply, EINVAL));
         let read_amount: usize = unwrap_or!(read_amount.try_into(),
@@ -308,7 +320,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
 
         let content_read = unwrap_or!(self.get_storage()
             .read(&file_inode, start_position, read_amount),
-            e, return_error!("Failed to read file. {e}", reply, EINVAL));
+            e, return_error!("Failed to read file. {e:?}", reply, EINVAL));
 
         reply.data(&content_read);
         info!("Read completed.");    
@@ -340,13 +352,8 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let should_fsync_all = get_is_inode_root(target_inode); 
         if should_fsync_all {
             unwrap_or!(self.save_persistently(),
-                // TODO/WIP
-                //e, return_error!("Failed to save TFS state. {e}", reply, EINVAL));
-                e, {
-                    error!("Failed to save TFS state. {}", e.get());
-                    reply.error(EINVAL);
-                    return;
-                });
+                // TODO/WIP: Probs get rid of :?
+                e, returne!(reply, EINVAL, error, "Failed to save TFS state. {e:?}"));
             reply.ok();
             info!("Saved all.");
             return;
@@ -372,7 +379,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
 
         if get_is_inode_root(previous_parent) && get_is_inode_root(new_parent) {
             unwrap_or!(self.rename_tag(&previous_name, new_name),
-                e, return_error!("Failed to rename tag. {e}", reply, EINVAL));
+                e, return_error!("Failed to rename tag. {e:?}", reply, EINVAL));
             reply.ok();
             info!("Renamed tag.");
             return;
@@ -386,7 +393,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
                 self.move_file(
                     &previous_parent.tags.clone(), &previous_name,
                     new_parent.tags.clone(), new_name),
-                e, return_error!("Failed to rename file. {e}", reply, EINVAL));
+                e, return_error!("Failed to rename file. {e:?}", reply, EINVAL));
             reply.ok();
             info!("Renamed file.");
             return;
@@ -413,11 +420,11 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
             e, return_error!("Writing too much data. {e}", reply, EINVAL));
 
         let file_inode: FileInode = unwrap_or!(target_inode.try_into(),
-            e, return_error!("Is not a file inode. {e}", reply, EINVAL));
+            e, return_error!("Is not a file inode. {e:?}", reply, EINVAL));
         let start_position: u64 = unwrap_or!(start_position.try_into(),
             e, return_error!("Can't convert offset. {e}", reply, EINVAL));
         unwrap_or!(self.write_to_file(&file_inode, start_position, to_write),
-            e, return_error!("{e}", reply, EINVAL));
+            e, return_error!("{e:?}", reply, EINVAL));
 
         reply.written(byte_amount);
         info!("Written.");
@@ -456,7 +463,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
             unwrap_or!(
                 self.remove_file_by_name_and_tags(
                     &file_name, &TagInodes::new()),
-                e, return_error!("{e}", reply, ENOENT));
+                e, return_error!("{e:?}", reply, ENOENT));
         }
 
         if let Ok(parent_namespace) = self.get_namespaces()
@@ -465,7 +472,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
             unwrap_or!(
                 self.remove_file_by_name_and_tags(
                     &file_name, &parent_namespace.tags.clone()),
-                e, return_error!("{e}", reply, ENOENT));
+                e, return_error!("{e:?}", reply, ENOENT));
         }
 
         reply.ok();
@@ -483,7 +490,7 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         }
         
         if let Err(e) = self.delete_tag(&tag_name.to_string_lossy()) {
-            error!("Failed to delete tag. {e}");
+            error!("Failed to delete tag. {e:?}");
             reply.error(ENOENT);
             return;
         }
@@ -497,7 +504,8 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         let initial_cooldown = 1;
         for try_index in 0..max_tries {
             if let Err(e) = self.save_persistently() {
-                error!("Failed to save TFS. {}", e.get());
+                // TODO/WIP: Get rid of :?
+                error!("Failed to save TFS. {e:?}");
             } else {
                 break;
             }

@@ -3,6 +3,8 @@ use syn::{parse_macro_input, punctuated::Punctuated, AttrStyle, Ident, Item,
     Meta, Path, Token, Data, DeriveInput};
 use quote::quote;
 
+use crate::BACKTRACE_MACRO_NAME;
+
 macro_rules! if_not_variant {
     ($enum: expr, $the_variant: path, $other_variant: ident, $else_do: expr) => {
         {
@@ -20,7 +22,7 @@ pub fn _define_with_backtrace(_: proc_macro::TokenStream) -> proc_macro::TokenSt
         Ident::new("error_type", Span::call_site()));
     quote! {
         #[derive(Debug)]
-        struct WithBacktrace<E> {
+        pub struct WithBacktrace<E> {
             pub error: E,
             pub backtrace: std::backtrace::Backtrace
         }
@@ -72,7 +74,7 @@ pub fn _derive_backtrace(code_tokens: proc_macro::TokenStream) -> proc_macro::To
     if let Data::Union(_) = derive_item.data {
         return syn::Error::new_spanned(
             derive_item.ident,
-            "Backtrace cannot be applied to unions.")
+            format!("{BACKTRACE_MACRO_NAME} cannot be applied to unions."))
             .to_compile_error()
             .into();
     }

@@ -1,8 +1,8 @@
-use crate::{errors::{AnyError, Result_}, unwrap_or};
+use crate::{errors::{AnyError, ResultBtAny_}, unwrap_or};
 
 #[test]
 fn executing_unwrap_or_on_result() {
-    let result: Result_<_>  = Ok(1);
+    let result: ResultBtAny_<_>  = Ok(1);
     let ok = unwrap_or!(result, e, {
         assert!(false);
         return;

@@ -16,6 +16,7 @@ pub fn define_with_backtrace(code_tokens: proc_macro::TokenStream) -> proc_macro
     _define_with_backtrace(code_tokens)
 }
 
+const BACKTRACE_MACRO_NAME: &str = "Backtrace";
 #[proc_macro_derive(Backtrace, attributes(bt_from))]
 pub fn derive_backtrace(code_tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     _derive_backtrace(code_tokens)

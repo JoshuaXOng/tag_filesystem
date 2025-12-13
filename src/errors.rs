@@ -2,23 +2,28 @@ use std::error::Error;
 
 use crate::WithBacktrace;
 
-// TODO: Consider replacing with either that one crate or
+// TODO/WIP: Consider replacing with either that one crate or
 // own error chain w/ generics.
 // TODO: Consistent file, lineno.
-pub type Result_<T> = Result<T, AnyError>;
-pub(crate) type ResultBt<T, E> = Result<T, WithBacktrace<E>>;
-pub(crate) type ResultBtAny<T> = Result<T, WithBacktrace<AnyError>>;
+// TODO: Remove pub(crate) usages
+pub type ResultBt<T, E> = Result<T, WithBacktrace<E>>;
+pub type ResultBtAny<T> = Result<T, WithBacktrace<AnyError>>;
+pub type ResultBtAny_<T> = ResultBtAny<T>;
 
 define_to_dyn!(&str);
+define_to_dyn!(String);
+define_to_dyn!(std::num::TryFromIntError);
 define_to_dyn!(std::io::Error);
+define_to_dyn!(capnp::Error);
 define_to_dyn!(serde_json::Error);
+define_to_dyn!(askama::Error);
 
-pub trait StringExt {
-    fn append_if_error<T>(&mut self, r: Result_<T>);
+pub(crate) trait StringExt {
+    fn append_if_error<T>(&mut self, r: ResultBtAny_<T>);
 }
 
 impl StringExt for String {
-    fn append_if_error<T>(&mut self, r: Result_<T>) {
+    fn append_if_error<T>(&mut self, r: ResultBtAny_<T>) {
         if let Err(e) = r {
             self.push_str(" ");
             self.push_str(&e.to_string());
