@@ -5,7 +5,6 @@ use crate::WithBacktrace;
 // TODO/WIP: Consider replacing with either that one crate or
 // own error chain w/ generics.
 // TODO: Consistent file, lineno.
-// TODO: Remove pub(crate) usages
 pub type ResultBt<T, E> = Result<T, WithBacktrace<E>>;
 pub type ResultBtAny<T> = Result<T, WithBacktrace<AnyError>>;
 
@@ -17,7 +16,7 @@ define_to_dyn!(capnp::Error);
 define_to_dyn!(serde_json::Error);
 define_to_dyn!(askama::Error);
 
-pub(crate) trait StringExt {
+pub trait StringExt {
     fn append_if_error<T>(&mut self, r: ResultBtAny<T>);
 }
 

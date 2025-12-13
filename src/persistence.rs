@@ -35,9 +35,7 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
                 }
                 if !errors.is_empty() {
                     return Err(errors.iter()
-                        // TODO/WIP: Decide how to display bt error
-                        .map(|e| e.get())
-                        .map(ToString::to_string)
+                        .map(|e| e.to_string_wbt())
                         .collect::<Vec<_>>()
                         .join(". ")
                         .into());

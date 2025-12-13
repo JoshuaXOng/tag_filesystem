@@ -9,7 +9,7 @@ use tracing::{info, instrument};
 use crate::{errors::{AnyError, ResultBt, ResultBtAny},
     path_::get_configuration_directory, wrappers::PathExt};
 
-pub(crate) trait TfsSnapshots {
+pub trait TfsSnapshots {
     fn open_safe(&self) -> ResultBt<File, OpenError>;
     fn create_staging(&self) -> ResultBtAny<File>; 
     fn promote_staging(&self) -> ResultBtAny<()>;

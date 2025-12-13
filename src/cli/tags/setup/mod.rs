@@ -19,7 +19,7 @@ pub struct SetupParameters {
 pub const DEFAULT_SCRIPT_NAME : &str = "change_tags.sh";
 
 impl SetupParameters {
-    pub(crate) fn run(&self, program_arguments: &ProgramParameters) -> ResultBtAny<()> {
+    pub fn run(&self, program_arguments: &ProgramParameters) -> ResultBtAny<()> {
         let script_content = ChangeTemplate::try_from(self)?
             .render()?;
 

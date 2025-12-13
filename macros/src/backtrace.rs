@@ -44,6 +44,17 @@ pub fn _define_with_backtrace(_: proc_macro::TokenStream) -> proc_macro::TokenSt
             }
         }
 
+        impl<E: std::fmt::Display> WithBacktrace<E> {
+            pub fn to_string_wbt(&self) -> String {
+                let mut as_string = self.get().to_string();
+                if std::backtrace::BacktraceStatus::Captured == self.backtrace.status() {
+                    as_string.push_str("\n");
+                    as_string.push_str(&self.backtrace.to_string());
+                }
+                as_string
+            }
+        }
+
         impl<E> std::ops::Deref for WithBacktrace<E> {
             type Target = E;
 
