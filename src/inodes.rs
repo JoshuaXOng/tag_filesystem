@@ -3,7 +3,8 @@ use std::{collections::BTreeSet, fmt::Display};
 use fuser::FUSE_ROOT_ID;
 use rand::random_range;
 
-use crate::{errors::{AnyError, ResultBtAny}, unwrap_or, wrappers::write_btreeset, WithBacktrace};
+use crate::{errors::{AnyError, ResultBtAny}, unwrap_or,
+    wrappers::write_btreeset, WithBacktrace};
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub struct FileInode {
