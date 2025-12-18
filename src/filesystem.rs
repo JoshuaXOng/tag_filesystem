@@ -11,7 +11,7 @@ use tracing::{info, instrument, warn};
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
 use crate::{entries::TfsEntry, errors::ResultBtAny, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
     NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces},
-    path_::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
+    path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
     storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
 

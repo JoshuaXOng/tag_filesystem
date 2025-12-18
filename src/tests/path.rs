@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::path_::PathBufExt;
+use crate::path::PathBufExt;
 
 #[test]
 fn modifying_path_string() {

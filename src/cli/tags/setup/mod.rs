@@ -4,7 +4,7 @@ use askama::Template;
 use clap::Parser;
 use tracing::info;
 
-use crate::{cli::ProgramParameters, errors::{AnyError, ResultBtAny}, path_::get_configuration_directory};
+use crate::{cli::ProgramParameters, errors::{AnyError, ResultBtAny}, path::get_configuration_directory};
 
 #[derive(Parser, Debug)]
 pub struct SetupParameters {

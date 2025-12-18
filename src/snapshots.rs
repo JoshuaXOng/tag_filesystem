@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use tracing::{info, instrument};
 
 use crate::{errors::{AnyError, ResultBt, ResultBtAny},
-    path_::get_configuration_directory, wrappers::PathExt};
+    path::get_configuration_directory, wrappers::PathExt};
 
 pub trait TfsSnapshots {
     fn open_safe(&self) -> ResultBt<File, OpenError>;

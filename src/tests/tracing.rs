@@ -3,7 +3,7 @@ use tracing::{info, instrument};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_test::traced_test;
 
-use crate::tracing_::configure_tracing;
+use crate::tracing::configure_tracing;
 
 static FOR_TRACING_SETUP: OnceLock<()> = OnceLock::new();
 

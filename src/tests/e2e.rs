@@ -6,7 +6,7 @@ use clap::Parser;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
-use crate::{errors::ResultBtAny, tests::{fixtures::with_tfs_mount, tracing_::setup_tracing},
+use crate::{errors::ResultBtAny, tests::{fixtures::with_tfs_mount, tracing::setup_tracing},
     wrappers::VecWrapper};
 
 #[test]

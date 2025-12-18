@@ -3,7 +3,7 @@ use std::{fs::{self, create_dir_all, remove_file, File, OpenOptions}, io::{Read,
 
 use tracing::{info, instrument, warn};
 
-use crate::{errors::ResultBtAny, inodes::FileInode, path_::get_configuration_directory, wrappers::PathExt};
+use crate::{errors::ResultBtAny, inodes::FileInode, path::get_configuration_directory, wrappers::PathExt};
 
 pub trait TfsStorage {
     fn get_file_size(&self, file_inode: &FileInode) -> ResultBtAny<u64>;

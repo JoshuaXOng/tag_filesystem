@@ -5,7 +5,7 @@ use std::fs::create_dir_all;
 
 use clap::{Parser, Subcommand};
 use crate::{cli::{mount::MountParameters, tags::TagsParameters}, errors::ResultBtAny,
-    path_::get_configuration_directory};
+    path::get_configuration_directory};
 
 #[derive(Parser, Debug)]
 pub struct ProgramParameters {

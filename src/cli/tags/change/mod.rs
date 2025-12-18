@@ -4,7 +4,7 @@ use bon::Builder;
 use clap::Parser;
 use tracing::info;
 
-use crate::{errors::ResultBtAny, path_::{format_tags, get_current_tags}, wrappers::StrExt};
+use crate::{errors::ResultBtAny, path::{format_tags, get_current_tags}, wrappers::StrExt};
 
 #[derive(Parser, PartialEq, Debug)]
 pub struct ChangeParameters {

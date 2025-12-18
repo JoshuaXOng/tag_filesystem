@@ -1,7 +1,7 @@
 use std::{fs::read_to_string, path::PathBuf};
 
 use crate::{files::TfsFile, inodes::{FileInode, NamespaceInode, TagInode},
-    namespaces::TfsNamespace, path_::get_configuration_directory, tags::TfsTag};
+    namespaces::TfsNamespace, path::get_configuration_directory, tags::TfsTag};
 
 #[derive(Debug)]
 pub struct TfsJournal {

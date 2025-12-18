@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{path_::get_configuration_directory, storage::DelegateStorage};
+use crate::{path::get_configuration_directory, storage::DelegateStorage};
 
 #[test]
 fn handling_double_slash() {

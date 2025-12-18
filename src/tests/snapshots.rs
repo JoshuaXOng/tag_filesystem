@@ -2,7 +2,7 @@ use std::io::{BufReader, Read, Write};
 
 use tempfile::tempdir;
 
-use crate::{snapshots::{PersistentSnapshots, TfsSnapshots}, tests::tracing_::setup_tracing};
+use crate::{snapshots::{PersistentSnapshots, TfsSnapshots}, tests::tracing::setup_tracing};
 
 #[test]
 fn running_normal_snapshot_cycle() {

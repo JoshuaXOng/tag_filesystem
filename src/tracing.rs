@@ -4,7 +4,7 @@ use file_rotate::{compression::Compression, suffix::AppendCount, ContentLimit, F
 use tracing::info;
 use tracing_subscriber::{fmt::{format::{DefaultFields, Format}, SubscriberBuilder}, EnvFilter};
 
-use crate::path_::get_configuration_directory;
+use crate::path::get_configuration_directory;
 
 const LOG_CONFIG_ENVVAR: &str = "ADDITIONAL_LOG_DIRECTIVES";
 
@@ -40,6 +40,7 @@ pub fn configure_tracing()
 
 pub fn setup_tracing() {
     let tracing_setup = configure_tracing();
+    // TODO: Ensure no conflicts in paths if mounting more than one
     // TODO: Safe across processes?
     // TODO: Prefix path based on mount
     let rotating_writer = Mutex::new(FileRotate::new(
