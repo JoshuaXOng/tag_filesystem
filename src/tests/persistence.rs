@@ -40,7 +40,6 @@ fn running_tag_filesystem_serdeialization() {
                 .group(1000)
                 .build()
         ]);
-    // TODO: Read up on Cursor::new
     let (recovered_files, recovered_tags) =
         deserialize_tag_filesystem(Cursor::new(persistence_location)).unwrap();
     let (rf, rt) = (recovered_files, recovered_tags);
