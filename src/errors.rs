@@ -10,6 +10,7 @@ define_to_dyn!(&str);
 define_to_dyn!(String);
 define_to_dyn!(std::num::TryFromIntError);
 define_to_dyn!(std::io::Error);
+define_to_dyn!(std::ffi::NulError);
 define_to_dyn!(capnp::Error);
 define_to_dyn!(serde_json::Error);
 define_to_dyn!(askama::Error);

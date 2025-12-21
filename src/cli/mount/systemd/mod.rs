@@ -1,19 +1,19 @@
-use std::{env::current_exe, fs::canonicalize, path::PathBuf};
+use std::{env::current_exe, fs::canonicalize, path::Path};
 
 use askama::Template;
 use clap::Args;
 
-use crate::{cli::ProgramParameters, errors::{AnyError, ResultBtAny}};
+use crate::{cli::{mount::MountParameters, ProgramParameters}, errors::ResultBtAny};
 
 #[derive(Args, Debug)]
-pub struct SystemdParamereters {
-    pub mount_path: PathBuf 
-}
+pub struct SystemdParamereters;
 
 impl SystemdParamereters {
-    pub fn run(&self, _program_arguments: &ProgramParameters) -> ResultBtAny<()> {
+    pub fn run(&self, _program_arguments: &ProgramParameters,
+        _mount_arguments: &MountParameters) -> ResultBtAny<()>
+    {
         // TODO: To implement, something like below.
-        // let service_configuration = ServiceTemplate::try_from(self)?
+        // let service_configuration = ServiceTemplate::try_new(_mount_arguments.mount_path)
         //     .render()?;
         // let to_configuration = PathBuf::from(SYSTEMD_SERVICE_DIRECTORY)
         //     .join(SERVICE_FILE_NAME);
@@ -42,15 +42,13 @@ pub struct ServiceTemplate {
     mount_user: String,
 }
 
-impl TryFrom<&SystemdParamereters> for ServiceTemplate {
-    type Error = AnyError;
-
-    fn try_from(value: &SystemdParamereters) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl ServiceTemplate {
+    pub fn try_new(mount_path: &Path) -> ResultBtAny<Self> {
+        Ok(ServiceTemplate {
             tfs_binary_path: canonicalize(current_exe()?)?
                 .to_string_lossy()
                 .into_owned(),
-            mount_path: canonicalize(&value.mount_path)?
+            mount_path: canonicalize(mount_path)?
                 .to_string_lossy()
                 .into_owned(),
             mount_user: users::get_current_username()

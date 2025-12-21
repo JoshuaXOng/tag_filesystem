@@ -72,11 +72,8 @@ fn systemd_unit_file_rendering() {
     setup_tracing();
 
     let temporary_directory = tempdir().unwrap();
-    let arguments = SystemdParamereters { 
-        mount_path: temporary_directory.path()
-            .to_path_buf()
-    };
-    let service_configuration = ServiceTemplate::try_from(&arguments)
+    let mount_path = temporary_directory.path().to_path_buf();
+    let service_configuration = ServiceTemplate::try_new(&mount_path)
         .unwrap()
         .render()
         .unwrap();
@@ -99,6 +96,6 @@ fn systemd_unit_file_rendering() {
                 .unwrap()
                 .display()
                 .to_string(),
-            mount_path=arguments.mount_path.display()
+            mount_path=mount_path.display()
                 .to_string()));
 }

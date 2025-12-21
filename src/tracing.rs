@@ -1,10 +1,11 @@
-use std::{env::{self, current_exe}, io::{stderr, Stderr}, sync::Mutex};
+use std::{env::{self, current_exe}, ffi::CString, io::{stderr, Stderr}, path::{Path, PathBuf}, sync::Mutex};
 
 use file_rotate::{compression::Compression, suffix::AppendCount, ContentLimit, FileRotate};
+use syslog_tracing::Syslog;
 use tracing::info;
 use tracing_subscriber::{fmt::{format::{DefaultFields, Format}, SubscriberBuilder}, EnvFilter};
 
-use crate::path::get_configuration_directory;
+use crate::{errors::ResultBtAny, path::get_configuration_directory};
 
 const LOG_CONFIG_ENVVAR: &str = "ADDITIONAL_LOG_DIRECTIVES";
 
@@ -38,13 +39,13 @@ pub fn configure_tracing()
     )
 }
 
-pub fn setup_tracing() {
+pub fn setup_normal_tracing<P: AsRef<Path>>(middle_scoping: P) {
     let tracing_setup = configure_tracing();
-    // TODO: Ensure no conflicts in paths if mounting more than one
-    // TODO: Safe across processes?
-    // TODO: Prefix path based on mount
     let rotating_writer = Mutex::new(FileRotate::new(
-        get_configuration_directory().join("tfs.log"),
+        get_configuration_directory()
+            .join("logs")
+            .join(middle_scoping)
+            .join("tfs.log"),
         AppendCount::new(1),
         ContentLimit::Bytes(10_000_000),
         Compression::None,
@@ -54,4 +55,27 @@ pub fn setup_tracing() {
         .with_writer(rotating_writer)
         .init();
     info!("Tracing directive is `{}`.", tracing_setup.1);
+}
+
+pub fn setup_syslog_tracing() -> ResultBtAny<()> {
+    let tracing_setup = configure_tracing();
+    let (syslog_options, syslog_facility) = Default::default();
+    let logger_name = env!("CARGO_PKG_NAME");
+    let syslog_writer = Syslog::new(
+        CString::new(logger_name)?,
+        syslog_options, syslog_facility)
+        .ok_or(format!("Syslog for `{logger_name}` already exists."))?;
+    tracing_setup.0
+        .with_writer(syslog_writer)
+        .init();
+    info!("Tracing directive is `{}`.", tracing_setup.1);
+    Ok(())
+}
+
+#[test]
+fn checking_join_behaviour() {
+    let mut path = PathBuf::from("/home")
+        .join("")
+        .join("jxo");
+    assert_eq!(path, PathBuf::from("/home").join("jxo"));
 }

@@ -31,6 +31,7 @@ sha2 = "0.10.9"
 shellexpand = "3.1.1"
 signal-hook = "0.3.18"
 syn = "2.0.106"
+syslog-tracing = "0.3.1"
 tempfile = "3.20.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }

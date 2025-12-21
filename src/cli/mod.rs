@@ -1,7 +1,7 @@
 pub mod mount;
 pub mod tags;
 
-use std::fs::create_dir_all;
+use std::fs::{self, create_dir_all};
 
 use clap::{Parser, Subcommand};
 use crate::{cli::{mount::MountParameters, tags::TagsParameters}, errors::ResultBtAny,
@@ -16,9 +16,13 @@ pub struct ProgramParameters {
 }
 
 impl ProgramParameters {
-    pub fn run(&self) -> ResultBtAny<()> {
+    pub fn run(&mut self) -> ResultBtAny<()> {
         let configuration_directory = get_configuration_directory();
         create_dir_all(configuration_directory)?;
+
+        if let ProgramSubcommands::Mount(ref mut mount_arguments) = self.subcommand {
+            mount_arguments.mount_path = fs::canonicalize(&mount_arguments.mount_path)?;
+        }
 
         match &self.subcommand {
             ProgramSubcommands::Mount(mount_arguments) => mount_arguments.run(self),

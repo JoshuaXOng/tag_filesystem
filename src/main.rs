@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use clap::Parser;
-use tag_filesystem::{cli::ProgramParameters, errors::ResultBtAny, tracing::setup_tracing};
+use tag_filesystem::{cli::ProgramParameters, errors::ResultBtAny};
 
 // TODO: More user friendly error messages.
 // Error: Os { code: 21, kind: IsADirectory, message: "Is a directory" }
@@ -14,7 +14,6 @@ fn main() -> ResultBtAny<()> {
 }
 
 fn _main() -> ResultBtAny<()> {
-    setup_tracing();
-    let program_arguments = ProgramParameters::parse();
+    let mut program_arguments = ProgramParameters::parse();
     program_arguments.run()
 }
