@@ -17,6 +17,7 @@ mod tests;
 pub mod inodes;
 pub mod journal;
 pub mod namespaces;
+pub mod os;
 pub mod path;
 pub mod persistence;
 pub mod snapshots;

@@ -4,7 +4,7 @@ use bon::Builder;
 use fuser::{FileAttr, FileType};
 
 use crate::{errors::ResultBtAny, inodes::{NamespaceInode, TagInodes},
-    wrappers::write_iter};
+    os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID}, wrappers::write_iter};
 
 #[derive(Builder, Debug)]
 #[builder(on(String, into))]
@@ -130,7 +130,6 @@ impl<'a> From<&'a mut TfsNamespace> for NamespaceUpdate<'a> {
     }
 }
 
-// TODO: Give proper values
 pub fn get_fuse_attributes(namespace_inode: &NamespaceInode) -> FileAttr {
     FileAttr {
         ino: namespace_inode.get_id(),
@@ -141,12 +140,12 @@ pub fn get_fuse_attributes(namespace_inode: &NamespaceInode) -> FileAttr {
         ctime: SystemTime::UNIX_EPOCH,
         crtime: SystemTime::UNIX_EPOCH,
         kind: FileType::Directory,
-        perm: 0o644,
-        nlink: 1,
-        uid: 1000,
-        gid: 1000,
-        rdev: 0,
-        blksize: 0,
-        flags: 0,
+        perm: 0o777,
+        nlink: 0,
+        uid: ROOT_UID,
+        gid: ROOT_GID,
+        rdev: NO_RDEV,
+        blksize: COMMON_BLOCK_SIZE,
+        flags: 0
     }
 }
