@@ -9,13 +9,13 @@ fn running_tag_filesystem_serdeialization() {
     serialize_tag_filesystem(&mut persistence_location, vec![
             &TfsFile::builder()
                 .name(String::from("test_file_a"))
-                .inode(101.try_into().unwrap())
+                .inode(3.try_into().unwrap())
                 .owner(1000)
                 .group(1000)
                 .build(),
             &TfsFile::builder()
                 .name(String::from("test_file_b"))
-                .inode(103.try_into().unwrap())
+                .inode(6.try_into().unwrap())
                 .owner(1000)
                 .group(1000)
                 .build()
@@ -23,19 +23,19 @@ fn running_tag_filesystem_serdeialization() {
         vec![
             &TfsTag::builder()
                 .name(String::from("test_tag_a"))
-                .inode(102.try_into().unwrap())
+                .inode(4.try_into().unwrap())
                 .owner(1000)
                 .group(1000)
                 .build(),
             &TfsTag::builder()
                 .name(String::from("test_tag_b"))
-                .inode(104.try_into().unwrap())
+                .inode(7.try_into().unwrap())
                 .owner(1000)
                 .group(1000)
                 .build(),
             &TfsTag::builder()
                 .name(String::from("test_tag_c"))
-                .inode(106.try_into().unwrap())
+                .inode(10.try_into().unwrap())
                 .owner(1000)
                 .group(1000)
                 .build()
@@ -46,15 +46,15 @@ fn running_tag_filesystem_serdeialization() {
 
     assert_eq!(rf.len(), 2);
     assert_eq!(rf[0].name, "test_file_a");
-    assert_eq!(rf[0].inode.get_id(), 101);
+    assert_eq!(rf[0].inode.get_id(), 3);
     assert_eq!(rf[1].name, "test_file_b");
-    assert_eq!(rf[1].inode.get_id(), 103);
+    assert_eq!(rf[1].inode.get_id(), 6);
 
     assert_eq!(rt.len(), 3);
     assert_eq!(rt[0].name, "test_tag_a");
-    assert_eq!(rt[0].inode.get_id(), 102);
+    assert_eq!(rt[0].inode.get_id(), 4);
     assert_eq!(rt[1].name, "test_tag_b");
-    assert_eq!(rt[1].inode.get_id(), 104);
+    assert_eq!(rt[1].inode.get_id(), 7);
     assert_eq!(rt[2].name, "test_tag_c");
-    assert_eq!(rt[2].inode.get_id(), 106);
+    assert_eq!(rt[2].inode.get_id(), 10);
 }

@@ -1,11 +1,13 @@
 use std::{collections::HashMap, fmt::Display, time::SystemTime};
 
+use bon::Builder;
 use fuser::{FileAttr, FileType};
 
-use crate::{errors::ResultBtAny, inodes::{NamespaceInode, TagInodes, ANY_NAMESPACE_INODE},
+use crate::{errors::ResultBtAny, inodes::{NamespaceInode, TagInodes},
     wrappers::write_iter};
 
-#[derive(Debug)]
+#[derive(Builder, Debug)]
+#[builder(on(String, into))]
 pub struct TfsNamespace {
     pub name: String,
     pub inode: NamespaceInode,
@@ -32,16 +34,13 @@ impl Display for TfsNamespace {
 
 #[derive(Debug)]
 pub struct IndexedNamepsaces {
-    namespaces: HashMap<NamespaceInode, TfsNamespace>,
-    next: NamespaceInode
+    namespaces: HashMap<NamespaceInode, TfsNamespace>
 }
 
 impl IndexedNamepsaces {
     pub fn new() -> Self {
         Self {
-            namespaces: HashMap::new(),
-            next: NamespaceInode::try_from(ANY_NAMESPACE_INODE)
-                .expect("`ANY_NAMESPACE_INODE` to be a valid namespace inode.")
+            namespaces: HashMap::new()
         }
     }
 
@@ -77,18 +76,21 @@ impl IndexedNamepsaces {
         &self.namespaces 
     }
 
-    // TODO: Might have to turn it into a series as a pre-req for safely
-    // allowing multi depth namespaces.
-    pub fn insert_limited(&mut self, namespace_name: impl Into<String>, namespace_tags: TagInodes)
-    -> NamespaceInode {
-        let current = self.next;
-        self.namespaces.insert(current, TfsNamespace {
-            name: namespace_name.into(),
-            inode: current,
-            tags: namespace_tags
-        });
-        self.next = current.get_next();
-        current
+    pub fn get_free_inode(&self) -> ResultBtAny<NamespaceInode> {
+        let inodes_inuse = self.namespaces.keys().collect();
+        NamespaceInode::try_from_free_inodes(inodes_inuse)
+    }
+
+    pub fn add(&mut self, to_add: TfsNamespace) -> ResultBtAny<NamespaceInode> {
+        let namespace_inode = to_add.inode;
+
+        let does_conflict = self.namespaces.get(&namespace_inode).is_some();
+        if does_conflict {
+            Err(format!("Namespace with id `{}` already exists.", namespace_inode))?;
+        }
+        
+        self.namespaces.insert(namespace_inode, to_add);
+        Ok(namespace_inode)
     }
 
     pub fn do_for_all<T>(&mut self, mut to_do: impl FnMut(NamespaceUpdate) -> T) -> Vec<T> {

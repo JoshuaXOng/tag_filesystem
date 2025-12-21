@@ -2,49 +2,54 @@ use crate::inodes::{FileInode, NamespaceInode, TagInode};
 
 #[test]
 fn creating_file_inodes() {
-    let file_inode = FileInode::try_from(101).unwrap();
-    assert_eq!(file_inode.get_id(), 101);
+    let file_inode = FileInode::try_from(3).unwrap();
+    assert_eq!(file_inode.get_id(), 3);
 
-    let file_inode = FileInode::try_from(103).unwrap();
-    assert_eq!(file_inode.get_id(), 103);
+    let file_inode = FileInode::try_from(6).unwrap();
+    assert_eq!(file_inode.get_id(), 6);
 
-    let file_inode = FileInode::try_from(105).unwrap();
-    assert_eq!(file_inode.get_id(), 105);
+    let file_inode = FileInode::try_from(9).unwrap();
+    assert_eq!(file_inode.get_id(), 9);
 
-    FileInode::try_from(106)
-        .expect_err("File inodes are odd integers.");
-
-    FileInode::try_from(99)
-        .expect_err("In namespace region.");
+    let expectation = "Needs to be remainder 0 after mod 3.";
+    FileInode::try_from(4)
+        .expect_err(expectation);
+    FileInode::try_from(5)
+        .expect_err(expectation);
 }
 
 #[test]
 fn creating_tag_inodes() {
-    let tag_inode = TagInode::try_from(102).unwrap();
-    assert_eq!(tag_inode.get_id(), 102);
+    let tag_inode = TagInode::try_from(4).unwrap();
+    assert_eq!(tag_inode.get_id(), 4);
 
-    let tag_inode = TagInode::try_from(104).unwrap();
-    assert_eq!(tag_inode.get_id(), 104);
+    let tag_inode = TagInode::try_from(7).unwrap();
+    assert_eq!(tag_inode.get_id(), 7);
 
-    let tag_inode = TagInode::try_from(106).unwrap();
-    assert_eq!(tag_inode.get_id(), 106);
+    let tag_inode = TagInode::try_from(10).unwrap();
+    assert_eq!(tag_inode.get_id(), 10);
 
-    TagInode::try_from(107)
-        .expect_err("Tag inodes are even integers.");
-
-    TagInode::try_from(100)
-        .expect_err("In namespace region.");
+    let expectation = "Needs to be remainder 1 after mod 3.";
+    TagInode::try_from(5)
+        .expect_err(expectation);
+    TagInode::try_from(6)
+        .expect_err(expectation);
 }
 
 #[test]
-fn creating_namespace_inodes() {
-    let mut namespace_inode = NamespaceInode::try_from(2).unwrap();
-    assert_eq!(namespace_inode.get_id(), 2);
-    namespace_inode = namespace_inode.get_next();
-    assert_eq!(namespace_inode.get_id(), 3);
+fn creating_namespace_inodes_() {
+    let namespace_inode = NamespaceInode::try_from(5).unwrap();
+    assert_eq!(namespace_inode.get_id(), 5);
 
-    namespace_inode = NamespaceInode::try_from(100).unwrap();
-    assert_eq!(namespace_inode.get_id(), 100);
-    namespace_inode = namespace_inode.get_next();
-    assert_eq!(namespace_inode.get_id(), 2);
+    let namespace_inode = NamespaceInode::try_from(8).unwrap();
+    assert_eq!(namespace_inode.get_id(), 8);
+
+    let namespace_inode = NamespaceInode::try_from(11).unwrap();
+    assert_eq!(namespace_inode.get_id(), 11);
+
+    let expectation = "Needs to be remainder 2 after mod 3.";
+    NamespaceInode::try_from(6)
+        .expect_err(expectation);
+    NamespaceInode::try_from(7)
+        .expect_err(expectation);
 }

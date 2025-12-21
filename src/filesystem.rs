@@ -10,7 +10,7 @@ use tracing::{info, instrument, warn};
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
 use crate::{entries::TfsEntry, errors::ResultBtAny, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
-    NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces},
+    NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces, TfsNamespace},
     path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
     storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
@@ -114,6 +114,10 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 
     pub fn get_namespaces(&self) -> &IndexedNamepsaces {
         &self.namespaces
+    }
+
+    pub fn get_free_namespace_inode(&self) -> ResultBtAny<NamespaceInode> {
+        self.namespaces.get_free_inode()
     }
 
     pub fn get_file_by_name_and_namespace_inode(&self, file_name: &str,
@@ -420,13 +424,19 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             _namespace_tags.0.insert(namespace_tag.inode);
         }
 
-        Ok(self.namespaces.insert_limited(namespace_string, _namespace_tags))
+        self.namespaces.add(TfsNamespace::builder()
+            .name(namespace_string)
+            .inode(self.get_free_namespace_inode()?)
+            .tags(_namespace_tags)
+            .build())
     }
 
-    pub fn insert_namespace_(&mut self, tag_inodes: TagInodes) -> NamespaceInode {
-        self.namespaces.insert_limited(
-            Self::get_namespace_string_from_tags(&self.tags, &tag_inodes),
-            tag_inodes)
+    pub fn insert_namespace_(&mut self, tag_inodes: TagInodes) -> ResultBtAny<NamespaceInode> {
+        self.namespaces.add(TfsNamespace::builder()
+            .name(Self::get_namespace_string_from_tags(&self.tags, &tag_inodes))
+            .inode(self.get_free_namespace_inode()?)
+            .tags(tag_inodes)
+            .build())
     }
     
     pub fn remove_file_by_name_and_tags<'a>(&mut self, file_name: &str,

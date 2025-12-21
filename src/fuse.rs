@@ -10,7 +10,7 @@ use tracing::{debug, error, info, instrument, trace, warn, Level};
 
 use crate::{entries::TfsEntry, errors::{ResultBt, StringExt},
     files::TfsFile, filesystem::TagFilesystem,
-    inodes::{get_is_inode_a_namespace, get_is_inode_root, FileInode,
+    inodes::{get_is_inode_root, FileInode,
     NamespaceInode, TagInode, TagInodes}, namespaces, storage::TfsStorage,
     tags::TfsTag, ttl::{ANY_TTL, NO_TTL}, ResultExt,
     ResultExt2};
@@ -348,7 +348,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         file_name: &OsStr, _mode: u32, _umask: u32, _flags: i32)
         -> ResultBt<CreateReply, ErrorReply>
     {
-        if !get_is_inode_root(parent_inode) && !get_is_inode_a_namespace(parent_inode) {
+        if !get_is_inode_root(parent_inode) && !NamespaceInode::get_is_namespace(parent_inode) {
             Err(ErrorReply::new(ENOENT, "Not child of TFS root nor a namespace."))?;
         }
 
@@ -545,7 +545,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         -> ResultBt<&'static str, ErrorReply>
     {
         let is_listing_root = get_is_inode_root(inode_id);
-        if !is_listing_root && !get_is_inode_a_namespace(inode_id) {
+        if !is_listing_root && !NamespaceInode::get_is_namespace(inode_id) {
             Err(ErrorReply::new(ENOENT, "Inode not root or a namespace."))?;
         }
 
@@ -729,7 +729,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
     fn unlink_inner(&mut self, _request: &Request<'_>, parent_inode: u64,
         file_name: &OsStr) -> ResultBt<&'static str, ErrorReply>
     {
-        if !get_is_inode_root(parent_inode) && !get_is_inode_a_namespace(parent_inode) {
+        if !get_is_inode_root(parent_inode) && !NamespaceInode::get_is_namespace(parent_inode) {
             Err(ErrorReply::new(ENOENT, String::from("Not child of TFS root nor \
                 a namespace.")))?;
         }
