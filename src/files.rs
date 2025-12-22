@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet}, fmt::Display, time::SystemTime};
 use bon::Builder;
 use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{FileInode, TagInodes}, unwrap_or,
+use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{FileInode, TagInodes},
     wrappers::{write_btreeset, write_iter, VecWrapper}};
 
 // TODO: Figure out eval steps. File inheriting perms
