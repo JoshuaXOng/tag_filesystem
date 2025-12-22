@@ -5,6 +5,8 @@ use fuser::FileType;
 
 use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::TagInode, wrappers::write_iter};
 
+pub const DEFAULT_TAG_PERMISSIONS: u16 = 0o777;
+
 #[derive(Builder, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[builder(on(String, into))]
 pub struct TfsTag {
@@ -12,7 +14,7 @@ pub struct TfsTag {
     pub inode: TagInode,
     pub owner: u32,
     pub group: u32,
-    #[builder(default = 0o640)]
+    #[builder(default = DEFAULT_TAG_PERMISSIONS)]
     pub permissions: u16,
     #[builder(default = SystemTime::now())]
     pub when_accessed: SystemTime,
