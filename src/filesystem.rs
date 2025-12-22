@@ -162,18 +162,26 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             .collect()
     }
 
-    // TODO: Convert silent warn to error return.
     #[instrument]
-    fn get_namespace_string_from_tags(filesystem_tags: &IndexedTags, tag_inodes: &TagInodes)
-    -> String {
-        format_tags(tag_inodes.0.iter()
-            .filter_map(|inode| 
-                filesystem_tags.get_by_inode(&inode)
-                    .or_else(|| {
-                        warn!("Likely bug, tag ids should always be valid.");
-                        None
-                    }))
-            .map(|tag| tag.name.as_str()))
+    fn get_namespace_string_from_tags(filesystem_tags: &IndexedTags,
+        tag_inodes: &TagInodes) -> ResultBtAny<String>
+    {
+        let mut existent_inodes = vec![];
+        let mut nonexistent_inodes = vec![];
+        for tag_inode in &tag_inodes.0 {
+            match filesystem_tags.get_by_inode(tag_inode) {
+                Some(tag) => existent_inodes.push(tag),
+                None => nonexistent_inodes.push(tag_inode)
+            }
+        }
+
+        if !nonexistent_inodes.is_empty() {
+            Err(format!("The following tag inodes don't exist `{}`.",
+                VecWrapper(nonexistent_inodes)))?;
+        }
+
+        Ok(format_tags(existent_inodes.iter()
+            .map(|tag| tag.name.as_str())))
     }
 
     pub fn get_fuser_attributes(&self, inode_id: u64) -> ResultBtAny<FileAttr> {
@@ -401,13 +409,15 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             return e;
         }
 
-        self.namespaces.do_for_all(|namespace_update| {
+        let namespace_updates: Vec<ResultBtAny<_>> = self.namespaces.do_for_all(|namespace_update| {
             if namespace_update.tags.0.contains(&tag_inode) {
                 let namespace_string = Self::get_namespace_string_from_tags(
-                    &self.tags, namespace_update.tags);
+                    &self.tags, namespace_update.tags)?;
                 *namespace_update.name = namespace_string;
             }
+            Ok(())
         });
+        collect_errors(namespace_updates.into_iter())?;
 
         Ok(())
     }
@@ -432,7 +442,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 
     pub fn insert_namespace_(&mut self, tag_inodes: TagInodes) -> ResultBtAny<NamespaceInode> {
         self.namespaces.add(TfsNamespace::builder()
-            .name(Self::get_namespace_string_from_tags(&self.tags, &tag_inodes))
+            .name(Self::get_namespace_string_from_tags(&self.tags, &tag_inodes)?)
             .inode(self.get_free_namespace_inode()?)
             .tags(tag_inodes)
             .build())
@@ -476,13 +486,15 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             })?;
         }
 
-        self.namespaces.do_for_all(|namespace_update| {
+        let namespace_updates: Vec<ResultBtAny<_>> = self.namespaces.do_for_all(|namespace_update| {
             if namespace_update.tags.0.remove(&removed_tag.inode) {
                 let namespace_string = Self::get_namespace_string_from_tags(
-                    &self.tags, namespace_update.tags);
+                    &self.tags, namespace_update.tags)?;
                 *namespace_update.name = namespace_string;
             }
+            Ok(())
         });
+        collect_errors(namespace_updates.into_iter())?;
 
         Ok(removed_tag)
     }
