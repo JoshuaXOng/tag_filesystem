@@ -227,25 +227,27 @@ pub struct TagUpdate<'a, 'b> {
     pub when_changed: &'b mut SystemTime,
 }
 
+macro_rules! try_set {
+    ($self: ident, $field: ident, $candidate: ident) => {
+        {
+            let original = $self.$field.clone();
+            *$self.$field = $candidate;
+            if let Err(e) = $self.will_collide() {
+                *$self.$field = original;
+                return Err(e);
+            }
+            Ok(())
+        }
+    }
+}
+
 impl<'a, 'b> TagUpdate<'a, 'b> {
     pub fn try_set_name(&mut self, name: String) -> ResultBtAny<()> {
-        let original = self.name.clone();
-        *self.name = name;
-        if let Err(e) = self.will_collide() {
-            *self.name = original;
-            return Err(e);
-        }
-        Ok(())
+        try_set!(self, name, name)
     }
 
     pub fn try_set_inode(&mut self, inode: TagInode) -> ResultBtAny<()> {
-        let original = self.inode.clone();
-        *self.inode = inode;
-        if let Err(e) = self.will_collide() {
-            *self.inode = original;
-            return Err(e);
-        }
-        Ok(())
+        try_set!(self, inode, inode)
     }
 
     fn will_collide(&self) -> ResultBtAny<()> {

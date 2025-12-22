@@ -414,35 +414,31 @@ pub struct FileUpdate<'a, 'b> {
     tags: &'b mut TagInodes,
 }
 
+macro_rules! try_set {
+    ($self: ident, $field: ident, $candidate: ident) => {
+        {
+            let original = $self.$field.clone();
+            *$self.$field = $candidate;
+            if let Err(e) = $self.will_collide() {
+                *$self.$field = original;
+                return Err(e);
+            }
+            Ok(())
+        }
+    }
+}
+
 impl<'a, 'b> FileUpdate<'a, 'b> {
     pub fn try_set_name(&mut self, name: String) -> ResultBtAny<()> {
-        let original = self.name.clone();
-        *self.name = name;
-        if let Err(e) = self.will_collide() {
-            *self.name = original;
-            return Err(e);
-        }
-        Ok(())
+        try_set!(self, name, name)
     }
 
     pub fn try_set_inode(&mut self, inode: FileInode) -> ResultBtAny<()> {
-        let original = self.inode.clone();
-        *self.inode = inode;
-        if let Err(e) = self.will_collide() {
-            *self.inode = original;
-            return Err(e);
-        }
-        Ok(())
+        try_set!(self, inode, inode)
     }
 
     pub fn try_set_tags(&mut self, tags: TagInodes) -> ResultBtAny<()> {
-        let original = self.tags.clone();
-        *self.tags = tags;
-        if let Err(e) = self.will_collide() {
-            *self.tags = original;
-            return Err(e);
-        }
-        Ok(())
+        try_set!(self, tags, tags)
     }
 
     fn will_collide(&self) -> ResultBtAny<()> {
