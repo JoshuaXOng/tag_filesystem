@@ -8,12 +8,8 @@ use fuser::{FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate,
 use libc::{c_int, EINVAL, ENOENT};
 use tracing::{debug, error, info, instrument, trace, warn, Level};
 
-use crate::{entries::TfsEntry, errors::{ResultBt, StringExt},
-    files::{TfsFile, DEFAULT_FILE_PERMISSIONS}, filesystem::TagFilesystem,
-    inodes::{get_is_inode_root, FileInode,
-    NamespaceInode, TagInode, TagInodes}, namespaces, storage::TfsStorage,
-    tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL}, ResultExt,
-    ResultExt2};
+use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, files::{TfsFile, DEFAULT_FILE_PERMISSIONS}, filesystem::TagFilesystem, inodes::{get_is_inode_root, FileInode,
+    NamespaceInode, TagInode, TagInodes}, namespaces, os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID}, storage::TfsStorage, tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL}, ResultExt, ResultExt2};
 
 macro_rules! event_ {
     ($tracing_level: expr, $error_message: expr, $($message_arguments: expr), *) => {{
@@ -36,27 +32,31 @@ macro_rules! handle_error_reply {
     }
 }
 
-// TODO: Some reply.error should not really log as an error.
-//
-// TODO: Sometimes the below error for `ct tag_2` when tag2 does exist.
-// Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
-// 
-// TODO: Should have 2 (or infinite) depth query sets? Cause like { tag_1, tag_2 }/file_1 
-// want to add tag_3, how to do with good ui
-// cwd at { tag_1, tag_2 }, mv file_1 ./{ tag_3 }
-// and want to remove a tag, mv file_1 ./{ ~tag_2 }
-//
-// TODO: Check they reply errors are the most suitable ones.
-// TODO: Errors need to be displayed to the user not just logged.
-// TODO: What does TTL, generation, fh, flags do?
-// TODO: Make some of the FUSE ops atomic
+// TODO(S):
+// - Some `reply.error` should not really log as an error.
+// - Sometimes the below error for `ct tag_2` when `tag2` does exist.
+//   `Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }`
+// - Should have two (or infinite) depth query sets? 
+//   Cause like `{ tag_1, tag_2 }/file_1`, want to add `tag_3`, how to do with good ux?
+//   cwd at `{ tag_1, tag_2 }`, `mv file_1 ./{ tag_3 }`,
+//   and want to remove a tag, `mv file_1 ./{ ~tag_2 }`
+// - Check they reply errors are the most suitable ones.
+// - Errors need to be displayed to the user not just logged.
+// - What does TTL, generation, fh, flags do?
+// - Make some of the FUSE ops atomic
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
+    fn init(&mut self, _request: &Request<'_>, _config: &mut KernelConfig)
+        -> Result<(), c_int>
+    {
+        todo!()
+    }
+
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
     fn create(&mut self, request: &Request<'_>, parent_inode: u64,
-        file_name: &OsStr, _mode: u32, _umask: u32, _flags: i32,
+        file_name: &OsStr, mode: u32, umask: u32, flags: i32,
         reply: ReplyCreate)
     {
-        match self.create_inner(request, parent_inode, file_name, _mode, _umask, _flags) {
+        match self.create_inner(request, parent_inode, file_name, mode, umask, flags) {
             Ok(_reply) => {
                 reply.created(&_reply.ttl, &_reply.attr, _reply.generation, _reply.fh,
                     _reply.flags);
@@ -68,9 +68,9 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
 
     #[instrument(skip_all, fields(?parent_inode, ?tag_name))]
     fn mkdir(&mut self, request: &Request<'_>, parent_inode: u64,
-        tag_name: &OsStr, _mode: u32, _umask: u32, reply: ReplyEntry)
+        tag_name: &OsStr, mode: u32, umask: u32, reply: ReplyEntry)
     {
-        match self.mkdir_inner(request, parent_inode, tag_name, _mode, _umask) {
+        match self.mkdir_inner(request, parent_inode, tag_name, mode, umask) {
             Ok(_reply) => {
                 reply.entry(&_reply.ttl, &_reply.attr, _reply.generation);
                 info!("Created tag.");
@@ -93,10 +93,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     #[instrument(skip_all, fields(?inode_id))]
-    fn getattr(&mut self, _request: &Request<'_>, inode_id: u64,
-        _file_handle: Option<u64>, reply: ReplyAttr)
+    fn getattr(&mut self, request: &Request<'_>, inode_id: u64,
+        file_handle: Option<u64>, reply: ReplyAttr)
     {
-        match self.getattr_inner(_request, inode_id, _file_handle) {
+        match self.getattr_inner(request, inode_id, file_handle) {
             Ok(_reply) => {
                 reply.attr(&_reply.ttl, &_reply.attr);
                 info!(_reply.message);
@@ -105,16 +105,16 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         }
     }
 
-    // TODO: Should probably have to -f when deleting tags w/ files under them.
-    // in `/tmp/tfs/` doing `rmdir tag_1` vs `rmdir "{ tag_1 }"
-    // TODO: Should allow listing of root or only allow {}?
-    // TODO: Determine if pagination can probably be race cond. in multi user
-    // TODO: remove _ prefix if used
+    // TODO(s): 
+    // - Should probably have to -f when deleting tags w/ files under them.
+    //   in `/tmp/tfs/` doing `rmdir tag_1` vs `rmdir "{ tag_1 }"
+    // - Should allow listing of root or only allow {}?
+    // - Determine if pagination can probably be race cond. in multi user
     #[instrument(skip_all, fields(?inode_id))]
-    fn readdir(&mut self, _request: &Request, inode_id: u64, _file_handle: u64,
+    fn readdir(&mut self, request: &Request, inode_id: u64, file_handle: u64,
         pagination_offset: i64, mut reply: ReplyDirectory)
     {
-        match self.readdir_inner(_request, inode_id, _file_handle, pagination_offset,
+        match self.readdir_inner(request, inode_id, file_handle, pagination_offset,
             &mut reply)
         {
             Ok(message) => {
@@ -125,14 +125,13 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         }
     }
 
-    // TODO: Use rest of args, or at least understand them.
     #[instrument(skip_all, fields(?target_inode, ?start_position, ?read_amount))]
-    fn read(&mut self, _request: &Request<'_>, target_inode: u64, _file_handle: u64,
-        start_position: i64, read_amount: u32, flags: i32, _lock_owner: Option<u64>,
+    fn read(&mut self, request: &Request<'_>, target_inode: u64, file_handle: u64,
+        start_position: i64, read_amount: u32, flags: i32, lock_owner: Option<u64>,
         reply: ReplyData)
     {
-        match self.read_inner(_request, target_inode, _file_handle,
-            start_position, read_amount, flags, _lock_owner)
+        match self.read_inner(request, target_inode, file_handle,
+            start_position, read_amount, flags, lock_owner)
         {
             Ok(_reply) => {
                 reply.data(&_reply.data);
@@ -143,11 +142,11 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     #[instrument(skip_all, fields(?target_inode))]
-    fn fsyncdir(&mut self, _request: &Request<'_>, target_inode: u64,
-        _file_handle: u64, _datasync: bool, reply: ReplyEmpty)
+    fn fsyncdir(&mut self, request: &Request<'_>, target_inode: u64,
+        file_handle: u64, datasync: bool, reply: ReplyEmpty)
     {
-        match self.fsyncdir_inner(_request, target_inode, _file_handle,
-            _datasync)
+        match self.fsyncdir_inner(request, target_inode, file_handle,
+            datasync)
         {
             Ok(message) => {
                 reply.ok();
@@ -158,12 +157,12 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     #[instrument(skip_all, fields(?previous_parent, ?previous_name, ?new_parent, ?new_name))]
-    fn rename(&mut self, _request: &Request<'_>, previous_parent: u64,
-        previous_name: &OsStr, new_parent: u64, new_name: &OsStr, _flags: u32,
+    fn rename(&mut self, request: &Request<'_>, previous_parent: u64,
+        previous_name: &OsStr, new_parent: u64, new_name: &OsStr, flags: u32,
         reply: ReplyEmpty)
     {
-        match self.rename_inner(_request, previous_parent, previous_name,
-            new_parent, new_name, _flags)
+        match self.rename_inner(request, previous_parent, previous_name,
+            new_parent, new_name, flags)
         {
             Ok(message) => {
                 reply.ok();
@@ -173,16 +172,16 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
         }
     }
 
-    // TODO: Not confirmed to be implemented (pagination offset...), handle errors better
-    // TODO: Does {e} get rendered?
-    // TODO: set nowrap in nvim and reformat width of all codes
+    // TODO(s):
+    // - Not confirmed to be implemented (pagination offset...), handle errors better
+    // - Does {e} get rendered?
     #[instrument(skip_all, fields(?target_inode, ?start_position))]
-    fn write(&mut self, _request: &Request<'_>, target_inode: u64, _file_handle: u64,
+    fn write(&mut self, request: &Request<'_>, target_inode: u64, file_handle: u64,
         start_position: i64, to_write: &[u8], write_flags: u32, flags: i32,
-        _lock_owner: Option<u64>, reply: ReplyWrite)
+        lock_owner: Option<u64>, reply: ReplyWrite)
     {
-        match self.write_inner(_request, target_inode, _file_handle, start_position,
-            to_write, write_flags, flags, _lock_owner)
+        match self.write_inner(request, target_inode, file_handle, start_position,
+            to_write, write_flags, flags, lock_owner)
         {
             Ok(_reply) => {
                 reply.written(_reply.amount);
@@ -193,14 +192,14 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     #[instrument(skip_all, fields(?target_inode))]
-    fn setattr(&mut self, _request: &Request<'_>, target_inode: u64,
-        _mode: Option<u32>, uid: Option<u32>, gid: Option<u32>, size: Option<u64>,
-        _atime: Option<TimeOrNow>, _mtime: Option<TimeOrNow>, _ctime: Option<SystemTime>,
-        fh: Option<u64>, _crtime: Option<SystemTime>, _chgtime: Option<SystemTime>,
-        _bkuptime: Option<SystemTime>, flags: Option<u32>, reply: ReplyAttr)
+    fn setattr(&mut self, request: &Request<'_>, target_inode: u64,
+        mode: Option<u32>, uid: Option<u32>, gid: Option<u32>, size: Option<u64>,
+        atime: Option<TimeOrNow>, mtime: Option<TimeOrNow>, ctime: Option<SystemTime>,
+        fh: Option<u64>, crtime: Option<SystemTime>, chgtime: Option<SystemTime>,
+        bkuptime: Option<SystemTime>, flags: Option<u32>, reply: ReplyAttr)
     {
-        match self.setattr_inner(_request, target_inode, _mode, uid, gid, size,
-            _atime, _mtime, _ctime, fh, _crtime, _chgtime, _bkuptime, flags)
+        match self.setattr_inner(request, target_inode, mode, uid, gid, size,
+            atime, mtime, ctime, fh, crtime, chgtime, bkuptime, flags)
         {
             Ok(_reply) => {
                 reply.attr(&_reply.ttl, &_reply.attr);
@@ -211,10 +210,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
-    fn unlink(&mut self, _request: &Request<'_>, parent_inode: u64, file_name: &OsStr,
+    fn unlink(&mut self, request: &Request<'_>, parent_inode: u64, file_name: &OsStr,
         reply: ReplyEmpty)
     {
-        match self.unlink_inner(_request, parent_inode, file_name) {
+        match self.unlink_inner(request, parent_inode, file_name) {
             Ok(message) => {
                 reply.ok();
                 info!(message);
@@ -224,10 +223,10 @@ impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     }
 
     #[instrument(skip_all, fields(?parent_inode, ?tag_name))]
-    fn rmdir(&mut self, _request: &Request<'_>, parent_inode: u64, tag_name: &OsStr,
+    fn rmdir(&mut self, request: &Request<'_>, parent_inode: u64, tag_name: &OsStr,
         reply: ReplyEmpty)
     {
-        match self.rmdir_inner(_request, parent_inode, tag_name) {
+        match self.rmdir_inner(request, parent_inode, tag_name) {
             Ok(message) => {
                 reply.ok();
                 info!(message);
@@ -341,9 +340,10 @@ struct SetattrReply {
     message: &'static str
 }
 
-// TODO: create f! macro
-
 impl<Storage: TfsStorage> TagFilesystem<Storage> {
+    // TODO(s):
+    // - Use rest of args, or at least understand them.
+    // - Remove _ prefix if used
     fn create_inner(&mut self, request: &Request<'_>, parent_inode: u64,
         file_name: &OsStr, _mode: u32, umask: u32, _flags: i32)
         -> ResultBt<CreateReply, ErrorReply>
@@ -406,7 +406,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
     {
         let tag_name = tag_name.to_string_lossy();
 
-        // TODO: Maybe accept mkdir everywhere, just always create at global.
+        // TODO: Maybe allow mkdir everywhere, just always create at global.
         if !get_is_inode_root(parent_inode) {
             Err(ErrorReply::new(ENOENT, "Needs to be under the root directory."))?;
         }
@@ -774,7 +774,7 @@ const ANY_GENERATION: u64 = 0;
 const ANY_FILE_HANDLE: u64 = 0;
 const ANY_FLAGS: u32 = 0;
 
-// TODO: Give proper values.
+// TODO/WIP: Give proper values.
 const ROOT_ATTRIBUTES: FileAttr = FileAttr {
     ino: FUSE_ROOT_ID,
     size: 0,
@@ -785,12 +785,12 @@ const ROOT_ATTRIBUTES: FileAttr = FileAttr {
     crtime: SystemTime::UNIX_EPOCH,
     kind: FileType::Directory,
     perm: 0o755,
-    nlink: 2,
-    uid: 1000,
-    gid: 1000,
-    rdev: 0,
+    nlink: 0,
+    uid: ROOT_UID,
+    gid: ROOT_GID,
+    rdev: NO_RDEV,
     flags: 0,
-    blksize: 512,
+    blksize: COMMON_BLOCK_SIZE,
 };
 
 fn get_is_a_namespace(value: &str) -> bool {
