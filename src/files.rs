@@ -6,8 +6,8 @@ use fuser::FileType;
 use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{FileInode, TagInodes},
     wrappers::{write_btreeset, write_iter, VecWrapper}};
 
-// TODO: Figure out eval steps. File inheriting perms
-// from directory etc., maybe rename - same with Tag builder. 
+pub const DEFAULT_FILE_PERMISSIONS: u16 = 0o666;
+
 #[derive(Builder, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone)]
 #[builder(on(String, into))]
 pub struct TfsFile {
@@ -15,7 +15,7 @@ pub struct TfsFile {
     pub inode: FileInode,
     pub owner: u32,
     pub group: u32,
-    #[builder(default = 0o640)]
+    #[builder(default = DEFAULT_FILE_PERMISSIONS)]
     pub permissions: u16,
     #[builder(default = SystemTime::now())]
     pub when_accessed: SystemTime,

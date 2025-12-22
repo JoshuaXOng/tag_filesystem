@@ -9,10 +9,10 @@ use libc::{c_int, EINVAL, ENOENT};
 use tracing::{debug, error, info, instrument, trace, warn, Level};
 
 use crate::{entries::TfsEntry, errors::{ResultBt, StringExt},
-    files::TfsFile, filesystem::TagFilesystem,
+    files::{TfsFile, DEFAULT_FILE_PERMISSIONS}, filesystem::TagFilesystem,
     inodes::{get_is_inode_root, FileInode,
     NamespaceInode, TagInode, TagInodes}, namespaces, storage::TfsStorage,
-    tags::TfsTag, ttl::{ANY_TTL, NO_TTL}, ResultExt,
+    tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL}, ResultExt,
     ResultExt2};
 
 macro_rules! event_ {
@@ -345,7 +345,7 @@ struct SetattrReply {
 
 impl<Storage: TfsStorage> TagFilesystem<Storage> {
     fn create_inner(&mut self, request: &Request<'_>, parent_inode: u64,
-        file_name: &OsStr, _mode: u32, _umask: u32, _flags: i32)
+        file_name: &OsStr, _mode: u32, umask: u32, _flags: i32)
         -> ResultBt<CreateReply, ErrorReply>
     {
         if !get_is_inode_root(parent_inode) && !NamespaceInode::get_is_namespace(parent_inode) {
@@ -357,7 +357,8 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             .inode(self.get_free_file_inode()
                 .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?)
             .owner(request.uid())
-            .group(request.gid());
+            .group(request.gid())
+            .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16));
 
         if get_is_inode_root(parent_inode) {
             let new_file = self.add_file(new_file.build())
@@ -398,8 +399,9 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         })
     }
 
+    // TODO: Figure out eval steps. for files and tags inheriting perms (setgid).
     fn mkdir_inner(&mut self, request: &Request<'_>, parent_inode: u64,
-        tag_name: &OsStr, _mode: u32, _umask: u32)
+        tag_name: &OsStr, _mode: u32, umask: u32)
         -> ResultBt<MkdirReply, ErrorReply>
     {
         let tag_name = tag_name.to_string_lossy();
@@ -424,6 +426,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
                     EINVAL, format!("No free tag inode. {}", e.to_string())))?)
             .owner(request.uid())
             .group(request.gid())
+            .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16))
             .build())
             .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
         let tag_inode = new_tag.inode;
