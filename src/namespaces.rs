@@ -68,8 +68,8 @@ impl IndexedNamepsaces {
         format!("Namespace id `{namespace_inode}` does not exist.")
     }
 
-    pub fn get_all(&self) -> Vec<&TfsNamespace> {
-        self.namespaces.values().collect()
+    pub fn get_all(&self) -> impl Iterator<Item = &TfsNamespace> {
+        self.namespaces.values()
     }
 
     pub fn get_map(&self) -> &HashMap<NamespaceInode, TfsNamespace> { 
@@ -77,7 +77,7 @@ impl IndexedNamepsaces {
     }
 
     pub fn get_free_inode(&self) -> ResultBtAny<NamespaceInode> {
-        let inodes_inuse = self.namespaces.keys().collect();
+        let inodes_inuse = self.namespaces.keys();
         NamespaceInode::try_from_free_inodes(inodes_inuse)
     }
 
@@ -93,12 +93,12 @@ impl IndexedNamepsaces {
         Ok(namespace_inode)
     }
 
-    pub fn do_for_all<T>(&mut self, mut to_do: impl FnMut(NamespaceUpdate) -> T) -> Vec<T> {
-        let mut to_return = Vec::new();
-        for tfs_namespace in self.namespaces.values_mut() {
-            to_return.push(to_do(tfs_namespace.into()));
-        }
-        to_return
+    pub fn do_for_all<'a, T>(&'a mut self,
+        mut to_do: impl FnMut(NamespaceUpdate) -> T + 'a)
+        -> impl Iterator<Item = T> + 'a
+    {
+        self.namespaces.values_mut()
+            .map(move |namespace| to_do(namespace.into()))
     }
 }
 

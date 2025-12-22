@@ -9,13 +9,13 @@ use tracing::{info, instrument, warn};
 
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::{collect_errors, ResultBtAny}, files::{IndexedFiles, TfsFile},
+use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny}, files::{IndexedFiles, TfsFile},
     inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal,
     namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE, NO_RDEV},
     path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
     storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
-    wrappers::VecWrapper};
+    wrappers::VecWrapper, WithBacktrace};
 
 #[derive(Debug)]
 pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
@@ -127,8 +127,8 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
                 does not exist.").into())
     }
 
-    pub fn get_files_by_namespace_inode(&self, namespace_inode: &NamespaceInode)
-    -> ResultBtAny<Vec<&TfsFile>> {
+    pub fn get_files_by_namespace_inode<'a>(&'a self, namespace_inode: &NamespaceInode)
+    -> ResultBtAny<impl Iterator<Item = &'a TfsFile>> {
         let namespace_tags = &self.namespaces.get_by_inode(namespace_inode)?.tags;
         Ok(self.files.get_by_tags(namespace_tags))
     }
@@ -343,8 +343,8 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     pub fn save_persistently(&self) -> ResultBtAny<()> {
         serialize_tag_filesystem(
             &self.snapshots.create_staging()?,
-            self.files.get_all(),
-            self.tags.get_all())?;
+            self.files.get_all().collect(),
+            self.tags.get_all().collect())?;
         self.snapshots.promote_staging()?;
         Ok(())
     }
@@ -409,15 +409,15 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             return e;
         }
 
-        let namespace_updates: Vec<ResultBtAny<_>> = self.namespaces.do_for_all(|namespace_update| {
+        let namespace_updates = self.namespaces.do_for_all(|namespace_update| {
             if namespace_update.tags.0.contains(&tag_inode) {
                 let namespace_string = Self::get_namespace_string_from_tags(
                     &self.tags, namespace_update.tags)?;
                 *namespace_update.name = namespace_string;
             }
-            Ok(())
+            Ok::<_, WithBacktrace<AnyError>>(())
         });
-        collect_errors(namespace_updates.into_iter())?;
+        collect_errors(namespace_updates)?;
 
         Ok(())
     }
@@ -464,7 +464,6 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         let removed_tag = self.tags.remove_by_name(&tag_name)
             .ok_or(format!("Tag `{tag_name}` does not exist."))?;
         let tag_sets: Vec<_> = self.files.get_tag_sets()
-            .into_iter()
             .cloned()
             .collect();
         for tag_set in tag_sets {
@@ -486,15 +485,15 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             })?;
         }
 
-        let namespace_updates: Vec<ResultBtAny<_>> = self.namespaces.do_for_all(|namespace_update| {
+        let namespace_updates = self.namespaces.do_for_all(|namespace_update| {
             if namespace_update.tags.0.remove(&removed_tag.inode) {
                 let namespace_string = Self::get_namespace_string_from_tags(
                     &self.tags, namespace_update.tags)?;
                 *namespace_update.name = namespace_string;
             }
-            Ok(())
+            Ok::<_, WithBacktrace<AnyError>>(())
         });
-        collect_errors(namespace_updates.into_iter())?;
+        collect_errors(namespace_updates)?;
 
         Ok(removed_tag)
     }

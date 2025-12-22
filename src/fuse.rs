@@ -559,11 +559,13 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         };
 
         if is_listing_root {
-            let mut tagless_files = self.get_files().get_by_tags(&TagInodes::new());
+            let mut tagless_files: Vec<_> = self.get_files()
+                .get_by_tags(&TagInodes::new())
+                .collect();
             tagless_files.sort();
             let tagless_files = tagless_files.into_iter().map(|file| file as &dyn TfsEntry);
 
-            let mut all_tags = self.get_tags().get_all();
+            let mut all_tags: Vec<_> = self.get_tags().get_all().collect();
             all_tags.sort();
             let all_tags = all_tags.into_iter().map(|tag| tag as &dyn TfsEntry);
 
@@ -589,10 +591,11 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         let inrange_tags = inrange_tags.into_iter()
             .map(|tag| tag as &dyn TfsEntry);
 
-        let mut inscope_files = self.get_files_by_namespace_inode(
+        let mut inscope_files: Vec<_> = self.get_files_by_namespace_inode(
             &current_namespace.inode)
             .map_err_inner(|e| ErrorReply::new(
-                EINVAL, format!("Could not get files under namespace. {e}")))?;
+                EINVAL, format!("Could not get files under namespace. {e}")))?
+            .collect();
         inscope_files.sort();
         let inscope_files = inscope_files.into_iter()
             .map(|file| file as &dyn TfsEntry);

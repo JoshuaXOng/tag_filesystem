@@ -89,6 +89,8 @@ type ByInode = HashMap<FileInode, TfsFile>;
 type ByTags = HashMap<TagInodes, Vec<FileInode>>;
 type ByNameAndTags = HashMap<(String, TagInodes), FileInode>;
 
+static EMPTY_FILES_VEC: Vec<FileInode> = Vec::new();
+
 #[derive(Debug, Clone)]
 pub struct IndexedFiles {
     files: ByInode,
@@ -119,20 +121,18 @@ impl IndexedFiles {
         self.files.get_mut(file_inode)
     }
 
-    pub fn get_by_tags(&self, file_tags: &TagInodes) -> Vec<&TfsFile> {
-        let matching_inodes = unwrap_or!(self.by_tags.get(file_tags), {
-            return Vec::new();
-        });
-
-        matching_inodes.iter()
+    pub fn get_by_tags(&self, file_tags: &TagInodes) -> impl Iterator<Item = &TfsFile> {
+        self.by_tags.get(file_tags)
+            .unwrap_or(&EMPTY_FILES_VEC)
+            .iter()
             .filter_map(|inode| self.files.get(inode))
-            .collect()
     }
 
+    // TODO: For other methods return Iterator instead of Vec and HashSet.
+    // For this method, wait for `get_many_mut`.
     fn get_by_tags_mut(&mut self, file_tags: &TagInodes) -> Vec<&mut TfsFile> {
-        let matching_inodes = unwrap_or!(self.by_tags.get(file_tags), {
-            return Vec::new();
-        });
+        let matching_inodes = self.by_tags.get(file_tags)
+            .unwrap_or(&EMPTY_FILES_VEC);
 
         let mut matching_files = Vec::new();
         for (inode, file) in &mut self.files {
@@ -144,7 +144,8 @@ impl IndexedFiles {
     }
 
     pub fn get_by_name_and_tags(&self, file_name: &str, file_tags: &TagInodes)
-    -> Option<&TfsFile> {
+        -> Option<&TfsFile>
+    {
         let file_inode = self.by_name_and_tags
             .get(&(file_name.to_string(), file_tags.clone()))?;
 
@@ -152,26 +153,26 @@ impl IndexedFiles {
     }
 
     fn get_by_name_and_tags_mut(&mut self, file_name: &str, file_tags: &TagInodes)
-    -> Option<&mut TfsFile> {
+        -> Option<&mut TfsFile>
+    {
         let file_inode = self.by_name_and_tags
             .get(&(file_name.to_string(), file_tags.clone()))?;
 
         self.files.get_mut(file_inode)
     }
 
-    pub fn get_all(&self) -> Vec<&TfsFile> {
-        self.files.values().collect()
+    pub fn get_all(&self) -> impl Iterator<Item = &TfsFile> {
+        self.files.values()
     }
 
-    fn get_all_mut(&mut self) -> Vec<&mut TfsFile> {
-        self.files.values_mut().collect()
+    fn get_all_mut(&mut self) -> impl Iterator<Item = &mut TfsFile> {
+        self.files.values_mut()
     }
 
-    pub fn get_tag_sets(&self) -> Vec<&TagInodes> {
+    pub fn get_tag_sets(&self) -> impl Iterator<Item = &TagInodes> {
         self.by_tags.iter()
             .filter(|(_, files)| !files.is_empty())
             .map(|(tags, _)| tags)
-            .collect()
     }
 
     pub fn get_neighbour_tag_inodes(&self, current_tags: &TagInodes) -> TagInodes {
@@ -185,12 +186,12 @@ impl IndexedFiles {
         neighbour_tags
     }
 
-    pub fn get_inuse_inodes(&self) -> Vec<&FileInode> {
-        self.files.keys().collect()
+    pub fn get_inuse_inodes_(&self) -> impl Iterator<Item = &FileInode> {
+        self.files.keys()
     }
 
     pub fn get_free_inode(&self) -> ResultBtAny<FileInode> {
-        let inodes_inuse = self.get_inuse_inodes();
+        let inodes_inuse = self.get_inuse_inodes_();
         FileInode::try_from_free_inodes(inodes_inuse)
     }
 
@@ -199,9 +200,11 @@ impl IndexedFiles {
             &check_for.name, &check_for.inode, &check_for.tags)
     }
 
-    fn _will_collide(files: &ByInode, by_tags: &ByTags, by_name_and_tags: &ByNameAndTags,
-        name: &str, inode: &FileInode, tags: &TagInodes
-    ) -> ResultBtAny<()> {
+    fn _will_collide(
+        files: &ByInode, by_tags: &ByTags, by_name_and_tags: &ByNameAndTags,
+        name: &str, inode: &FileInode, tags: &TagInodes)
+        -> ResultBtAny<()>
+    {
         let does_inode = files.contains_key(&inode);
         let do_tags = by_tags.get(&tags)
             .map(|inodes| inodes.contains(&inode))
@@ -215,14 +218,18 @@ impl IndexedFiles {
         Ok(())
     }
 
-    pub fn do_by_inode<T>(&mut self, file_inode: &FileInode, to_do: impl FnOnce(FileUpdate) -> T)
-    -> ResultBtAny<T> {
+    pub fn do_by_inode<T>(&mut self, file_inode: &FileInode,
+        to_do: impl FnOnce(FileUpdate) -> T)
+        -> ResultBtAny<T>
+    {
         self.do_or_rollback(file_inode, to_do)
     }
 
-    pub fn do_by_tags<T>(&mut self, file_tags: &TagInodes,
-        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T
-    ) -> ResultBtAny<T> {
+    pub fn do_by_tags<T>(&mut self,
+        file_tags: &TagInodes,
+        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T)
+        -> ResultBtAny<T>
+    {
         let target_inodes = self.by_tags.get(file_tags)
             .ok_or(format!("No files with tags `{file_tags}`."))?
             .clone();
@@ -231,9 +238,12 @@ impl IndexedFiles {
         Ok(to_return)
     }
 
-    pub fn do_by_name_and_tags<T>(&mut self, file_name: &str, file_tags: &TagInodes,
-        to_do: impl FnOnce(FileUpdate) -> T
-    ) -> ResultBtAny<T> {
+    pub fn do_by_name_and_tags<T>(&mut self,
+        file_name: &str,
+        file_tags: &TagInodes,
+        to_do: impl FnOnce(FileUpdate) -> T)
+        -> ResultBtAny<T>
+    {
         let target_inode = *self.by_name_and_tags.get(&(
             file_name.to_string(),
             file_tags.clone()))
@@ -243,8 +253,11 @@ impl IndexedFiles {
         self.do_or_rollback(&target_inode, to_do)
     }
 
-    fn do_or_rollback<T>(&mut self, file_inode: &FileInode, to_do: impl FnOnce(FileUpdate) -> T)
-    -> ResultBtAny<T> {
+    fn do_or_rollback<T>(&mut self,
+        file_inode: &FileInode,
+        to_do: impl FnOnce(FileUpdate) -> T)
+        -> ResultBtAny<T>
+    {
         let mut target_file = self.remove_by_inode(file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist."))?;
         let callback_return = to_do(FileUpdate {
@@ -265,10 +278,11 @@ impl IndexedFiles {
         Ok(callback_return)
     }
 
-    // TODO: For other methods and this, return iter instead of Vec, Hashset?
-    fn do_or_partial_rollback_bulk<T>(&mut self, file_inodes: &HashSet<FileInode>,
+    fn do_or_partial_rollback_bulk<T>(&mut self,
+        file_inodes: &HashSet<FileInode>,
         mut to_do: impl FnMut(FileUpdate) -> T)
-    -> ResultBtAny<HashMap<FileInode, T>> {
+        -> ResultBtAny<HashMap<FileInode, T>>
+    {
         let dont_exist = file_inodes.iter()
             .filter(|inode| self.get_by_inode(inode)
                 .is_none())
@@ -287,9 +301,11 @@ impl IndexedFiles {
         Ok(callback_returns)
     }
 
-    fn do_or_complete_rollback_bulk<T>(&mut self, file_inodes: &HashSet<FileInode>,
+    fn do_or_complete_rollback_bulk<T>(&mut self,
+        file_inodes: &HashSet<FileInode>,
         to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T)
-    -> ResultBtAny<T> {
+        -> ResultBtAny<T>
+    {
         let dont_exist = file_inodes.iter()
             .filter(|inode| self.get_by_inode(inode)
                 .is_none())
@@ -358,19 +374,17 @@ impl IndexedFiles {
         Some(to_remove)
     }
 
-    pub fn remove_by_tags(&mut self, file_tags: &TagInodes) -> Vec<TfsFile> {
-        let to_remove = unwrap_or!(self.by_tags.get(file_tags), {
-            return Vec::new();
-        });
-        let to_remove = to_remove.clone();
-
-        to_remove.into_iter()
+    pub fn remove_by_tags(&mut self, file_tags: &TagInodes) -> impl Iterator<Item = TfsFile> {
+        self.by_tags.get(file_tags)
+            .unwrap_or(&EMPTY_FILES_VEC)
+            .clone()
+            .into_iter()
             .filter_map(|inode| self.remove_by_inode(&inode))
-            .collect()
     }
 
     pub fn remove_by_name_and_tags(&mut self, file_name: &str, file_tags: &TagInodes)
-    -> Option<TfsFile> {
+        -> Option<TfsFile>
+    {
         let to_remove = self.by_name_and_tags
             .get(&(file_name.to_string(), file_tags.clone()))?
             .clone();

@@ -1,6 +1,7 @@
-use std::{collections::BTreeSet, fmt::Display};
+use std::{borrow::Borrow, collections::BTreeSet, fmt::Display};
 
 use fuser::FUSE_ROOT_ID;
+use itertools::Itertools;
 use rand::random_range;
 
 use crate::{errors::{AnyError, ResultBtAny}, unwrap_or,
@@ -32,13 +33,16 @@ fn generate_jumpoff_inode() -> u64 {
     random_range(unscaled_start..=unscaled_end) * INODE_TYPE_COUNT
 }
 
-fn generate_free_inode<T>(inodes_inuse: Vec<&T>, type_remainder: u64)
-    -> ResultBtAny<T> where T: TryFrom<u64> + PartialEq + Ord
+fn generate_free_inode_<'a, T, R>(
+    mut inodes_inuse: impl Itertools<Item = &'a T>,
+    type_remainder: u64) -> ResultBtAny<R>
+    where T: PartialEq + 'a,
+    R: TryFrom<u64> + PartialEq + Ord + Borrow<T>
 {
     loop {
         let inode_id = generate_jumpoff_inode() + type_remainder;
-        let candidate_inode = unwrap_or!(T::try_from(inode_id), _e, continue);
-        if !inodes_inuse.contains(&&candidate_inode) {
+        let candidate_inode = unwrap_or!(R::try_from(inode_id), _e, continue);
+        if !inodes_inuse.contains(candidate_inode.borrow()) {
             return Ok(candidate_inode);
         }
     }
@@ -56,9 +60,10 @@ impl FileInode {
         get_is_inode_type(inode_id, FILE_TYPE_REMAINDER)
     }
 
-    pub fn try_from_free_inodes<T>(inodes_inuse: Vec<&T>)
-    -> ResultBtAny<T> where T: TryFrom<u64> + PartialEq + Ord {
-        generate_free_inode(inodes_inuse, FILE_TYPE_REMAINDER)
+    pub fn try_from_free_inodes<'a>(inodes_inuse: impl Iterator<Item = &'a FileInode>)
+        -> ResultBtAny<FileInode>
+    {
+        generate_free_inode_(inodes_inuse, FILE_TYPE_REMAINDER)
     }
 }
 
@@ -92,10 +97,11 @@ impl TagInode {
     pub fn get_is_tag(inode_id: u64) -> bool {
         get_is_inode_type(inode_id, TAG_TYPE_REMAINDER)
     }
-
-    pub fn try_from_free_inodes<T>(inodes_inuse: Vec<&T>)
-    -> ResultBtAny<T> where T: TryFrom<u64> + PartialEq + Ord {
-        generate_free_inode(inodes_inuse, TAG_TYPE_REMAINDER)
+    
+    pub fn try_from_free_inodes<'a>(inodes_inuse: impl Iterator<Item = &'a TagInode>)
+        -> ResultBtAny<TagInode>
+    {
+        generate_free_inode_(inodes_inuse, TAG_TYPE_REMAINDER)
     }
 }
 
@@ -161,9 +167,10 @@ impl NamespaceInode {
         get_is_inode_type(inode_id, NAMESPACE_TYPE_REMAINDER)
     }
 
-    pub fn try_from_free_inodes<T>(inodes_inuse: Vec<&T>)
-    -> ResultBtAny<T> where T: TryFrom<u64> + PartialEq + Ord {
-        generate_free_inode(inodes_inuse, NAMESPACE_TYPE_REMAINDER)
+    pub fn try_from_free_inodes<'a>(inodes_inuse: impl Iterator<Item = &'a NamespaceInode>)
+        -> ResultBtAny<NamespaceInode>
+    {
+        generate_free_inode_(inodes_inuse, NAMESPACE_TYPE_REMAINDER)
     }
 }
 

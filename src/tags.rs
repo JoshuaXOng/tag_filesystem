@@ -113,16 +113,16 @@ impl IndexedTags {
             .and_then(|inode| self.tags.get_mut(inode))
     }
 
-    pub fn get_all(&self) -> Vec<&TfsTag> {
-        self.tags.values().collect()
+    pub fn get_all(&self) -> impl Iterator<Item = &TfsTag> {
+        self.tags.values()
     }
 
-    fn get_all_mut(&mut self) -> Vec<&mut TfsTag> {
-        self.tags.values_mut().collect()
+    fn get_all_mut(&mut self) -> impl Iterator<Item = &mut TfsTag> {
+        self.tags.values_mut()
     }
 
-    pub fn get_inuse_inodes(&self) -> Vec<&TagInode> {
-        self.tags.keys().collect()
+    pub fn get_inuse_inodes(&self) -> impl Iterator<Item = &TagInode> {
+        self.tags.keys()
     }
 
     pub fn get_free_inode(&self) -> ResultBtAny<TagInode> {
