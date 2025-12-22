@@ -2,7 +2,6 @@ use std::{error::Error, fmt::Display};
 
 use crate::WithBacktrace;
 
-// TODO: Consistent file, lineno.
 pub type ResultBt<T, E> = Result<T, WithBacktrace<E>>;
 pub type ResultBtAny<T> = Result<T, WithBacktrace<AnyError>>;
 
@@ -40,8 +39,6 @@ pub fn collect_errors<T, E: Display>(errors: impl Iterator<Item = ResultBt<T, E>
     Ok(())
 }
 
-// TODO: Read up on reasoning behind things that are not Send and Sync. And why does
-// `into`/conversions not work for some cases when not including Sync
 pub type AnyError = Box<dyn Error + Send + Sync>;
 
 #[macro_export]

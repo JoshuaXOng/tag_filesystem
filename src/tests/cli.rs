@@ -66,7 +66,6 @@ fn parsing_changing_tags() {
     println!("{:?}", path);
 }
 
-// TODO: Rewrite tests.
 #[test]
 fn systemd_unit_file_rendering() {
     setup_tracing();
