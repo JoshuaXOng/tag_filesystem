@@ -1,5 +1,5 @@
-use std::{fmt::Display, fs::File, io::BufReader, path::PathBuf, thread::sleep, time::{Duration,
-    Instant, SystemTime}};
+use std::{fmt::Display, fs::File, io::BufReader, path::PathBuf, thread::sleep,
+    time::{Duration, Instant}};
 
 use bon::bon;
 use fuser::{spawn_mount2, FileAttr, MountOption};
@@ -9,20 +9,19 @@ use tracing::{info, instrument, warn};
 
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::ResultBtAny, files::{IndexedFiles, TfsFile}, inodes::{FileInode,
-    NamespaceInode, TagInode, TagInodes}, journal::TfsJournal, namespaces::{self, IndexedNamepsaces, TfsNamespace},
+use crate::{entries::TfsEntry, errors::{collect_errors, ResultBtAny}, files::{IndexedFiles, TfsFile},
+    inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal,
+    namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE, NO_RDEV},
     path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
-    storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper};
+    storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
+    wrappers::VecWrapper};
 
-// TODO: Performance and saving after each change? (mmap, flushing)
-// TODO: How to implement, atomicity and crash tolerance
 #[derive(Debug)]
 pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
 where Storage: TfsStorage, Snapshots: TfsSnapshots {
     files: IndexedFiles,
     tags: IndexedTags,
-    // TODO: Should store parent to allow multi depth namespaces.
     namespaces: IndexedNamepsaces,
     storage: Storage,
     snapshots: Snapshots,
@@ -38,7 +37,6 @@ impl TagFilesystem {
         let mut indexed_files = IndexedFiles::new();
         let mut indexed_tags = IndexedTags::new();
         if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
-            // TODO: Read up on BufReader
             let (persisted_files, persisted_tags) = deserialize_tag_filesystem(
                 BufReader::new(&safe_snapshot))?;
             for persisted_file in persisted_files {
@@ -213,7 +211,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     #[builder]
     fn to_fuser(tfs_entry: &dyn TfsEntry, file_size: Option<u64>) -> FileAttr {
         let file_size = file_size.unwrap_or(0);
-        // TODO: What to do with `blocks`, `nlink`, etc.
+        // TODO: What to do with `blocks`, `nlink` and `flags`.
         FileAttr {
             ino: tfs_entry.get_inode_id(),
             size: file_size,
@@ -221,14 +219,14 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             atime: tfs_entry.get_when_accessed(),
             mtime: tfs_entry.get_when_modified(),
             ctime: tfs_entry.get_when_changed(),
-            crtime: SystemTime::UNIX_EPOCH,
+            crtime: tfs_entry.get_when_created(),
             kind: tfs_entry.get_file_kind(),
             perm: tfs_entry.get_permissions(),
             nlink: 0,
             uid: tfs_entry.get_owner(),
             gid: tfs_entry.get_group(),
-            rdev: 0,
-            blksize: 0,
+            rdev: NO_RDEV,
+            blksize: COMMON_BLOCK_SIZE,
             flags: 0,
         }
     }
@@ -385,6 +383,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
+    // TODO: Make atomic, along with `delete_tag`.
     pub fn rename_tag(&mut self, old_name: &str, new_name: String) -> ResultBtAny<()> {
         let tag_inode = self.tags.get_by_name(old_name)
             .ok_or(format!("Tag `{old_name}` does not exist"))?

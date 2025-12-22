@@ -20,6 +20,8 @@ pub struct TfsTag {
     pub when_modified: SystemTime,
     #[builder(default = SystemTime::now())]
     pub when_changed: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_created: SystemTime
 }
 
 impl TfsEntry for TfsTag {
@@ -57,6 +59,10 @@ impl TfsEntry for TfsTag {
 
     fn get_when_changed(&self) -> SystemTime {
         self.when_changed
+    }
+
+    fn get_when_created(&self) -> SystemTime {
+        self.when_created
     }
 }
 

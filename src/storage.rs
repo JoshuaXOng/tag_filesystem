@@ -38,7 +38,6 @@ impl DelegateStorage {
                 delegate_directory.to_string_lossy());
         } else if !does_exist {
             create_dir_all(&delegate_directory)?;
-            // TODO: tracing should be before side-effect in rust
             info!("Creating directories on the way to `{}`.",
                 delegate_directory.to_string_lossy());
         }

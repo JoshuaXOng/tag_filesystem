@@ -22,6 +22,7 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
         let when_accessed = as_system_time_unix_epoch(capnp_file.get_when_accessed());
         let when_modified = as_system_time_unix_epoch(capnp_file.get_when_modified());
         let when_changed = as_system_time_unix_epoch(capnp_file.get_when_changed());
+        let when_created = as_system_time_unix_epoch(capnp_file.get_when_created());
         let tag_inodes = capnp_file.get_tags()
             .map_err(AnyError::from)
             .and_then(|inodes| {
@@ -45,11 +46,11 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
         
         match (
             file_name, file_inode, when_accessed,
-            when_modified, when_changed, tag_inodes
+            when_modified, when_changed, when_created, tag_inodes
         ) {
             (
                 Ok(name), Ok(inode), Ok(accessed),
-                Ok(modified), Ok(changed), Ok(tags)
+                Ok(modified), Ok(changed), Ok(created), Ok(tags)
             ) => {
                 tfs_files.push(TfsFile { 
                     name,
@@ -60,14 +61,15 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
                     when_accessed: accessed,
                     when_modified: modified,
                     when_changed: changed,
-                    tags: tags.into()
+                    when_created: created,
+                    tags: tags.into(),
                 });
             },
-            (name, inode, accessed, modified, changed, tags) => {
+            (name, inode, accessed, modified, changed, created, tags) => {
                 return Err(format!("Not all file fields could be deserialized: \
                     name `{name:?}`, inode `{inode:?}`, accessed `{accessed:?}`, \
-                    modified `{modified:?}`, changed `{changed:?}`,
-                    tags `{tags:?}`.").into());
+                    modified `{modified:?}`, changed `{changed:?}`, \
+                    created `{created:?}`, tags `{tags:?}`.").into());
             }
         }
     }
@@ -82,13 +84,14 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
         let when_accessed = as_system_time_unix_epoch(capnp_tag.get_when_accessed());
         let when_modified = as_system_time_unix_epoch(capnp_tag.get_when_modified());
         let when_changed = as_system_time_unix_epoch(capnp_tag.get_when_changed());
+        let when_created = as_system_time_unix_epoch(capnp_tag.get_when_created());
         match (
             tag_name, tag_inode, when_accessed,
-            when_modified, when_changed
+            when_modified, when_changed, when_created
         ) {
             (
                 Ok(name), Ok(inode), Ok(accessed),
-                Ok(modified), Ok(changed)
+                Ok(modified), Ok(changed), Ok(created)
             ) => {
                 tfs_tags.push(TfsTag { 
                     name,
@@ -98,13 +101,15 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
                     permissions: capnp_tag.get_permissions(),
                     when_accessed: accessed,
                     when_modified: modified,
-                    when_changed: changed
+                    when_changed: changed,
+                    when_created: created
                 });
             },
-            (name, inode, accessed, modified, changed) => {
+            (name, inode, accessed, modified, created, changed) => {
                 return Err(format!("Not all tag fields could be deserialized: \
                     name `{name:?}`, inode `{inode:?}`, accessed `{accessed:?}`, \
-                    modified `{modified:?}`, changed `{changed:?}`.").into());
+                    modified `{modified:?}`, changed `{changed:?}`, \
+                    created `{created:?}`.").into());
             }
         }
     }

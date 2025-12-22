@@ -9,4 +9,5 @@ struct TfsTag {
   whenAccessed @5 :UInt64;
   whenModified @6 :UInt64;
   whenChanged  @7 :UInt64;
+  whenCreated  @8 :UInt64;
 }

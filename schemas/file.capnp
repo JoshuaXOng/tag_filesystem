@@ -9,5 +9,6 @@ struct TfsFile {
   whenAccessed @5 :UInt64;
   whenModified @6 :UInt64;
   whenChanged  @7 :UInt64;
+  whenCreated  @9 :UInt64;
   tags         @8 :List(UInt64);
 }

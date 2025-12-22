@@ -23,6 +23,8 @@ pub struct TfsFile {
     pub when_modified: SystemTime,
     #[builder(default = SystemTime::now())]
     pub when_changed: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_created: SystemTime,
     #[builder(default = TagInodes::new())]
     pub tags: TagInodes,
 }
@@ -62,6 +64,10 @@ impl TfsEntry for TfsFile {
 
     fn get_when_changed(&self) -> SystemTime {
         self.when_changed
+    }
+
+    fn get_when_created(&self) -> SystemTime {
+        self.when_created
     }
 }
 

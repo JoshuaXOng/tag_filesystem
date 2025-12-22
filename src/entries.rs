@@ -15,6 +15,7 @@ pub trait TfsEntry {
     fn get_when_accessed(&self) -> SystemTime;
     fn get_when_modified(&self) -> SystemTime;
     fn get_when_changed(&self) -> SystemTime;
+    fn get_when_created(&self) -> SystemTime;
 }
 
 impl Display for dyn TfsEntry {
