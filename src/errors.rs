@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fmt::Display};
 
 use crate::WithBacktrace;
 
@@ -26,6 +26,18 @@ impl StringExt for String {
             self.push_str(&e.to_string());
         }
     }
+}
+
+pub fn collect_errors<T, E: Display>(errors: impl Iterator<Item = ResultBt<T, E>>)
+    -> ResultBtAny<()>
+{
+    let errors = errors.filter_map(Result::err)
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>();
+    if !errors.is_empty() {
+        Err(errors.join(" "))?
+    }
+    Ok(())
 }
 
 // TODO: Read up on reasoning behind things that are not Send and Sync. And why does
