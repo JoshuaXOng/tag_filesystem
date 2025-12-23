@@ -142,6 +142,7 @@ pub fn get_fuse_attributes(namespace_inode: &NamespaceInode) -> FileAttr {
         kind: FileType::Directory,
         perm: 0o777,
         nlink: 0,
+        // TODO/WIP: Is this right?
         uid: ROOT_UID,
         gid: ROOT_GID,
         rdev: NO_RDEV,
