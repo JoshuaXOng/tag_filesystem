@@ -39,6 +39,31 @@ pub fn collect_errors<T, E: Display>(errors: impl Iterator<Item = ResultBt<T, E>
     Ok(())
 }
 
+#[macro_export]
+macro_rules! return_errors {
+    (helper $message: expr, $error: ident) => {
+        if let Err(e) = $error { ($message, e.to_string()) }
+        else { ($message, String::new()) }
+    };
+    (helper $message: expr, $error: ident, $($errors: ident), +) => {
+        if let Err(e) = $error { 
+            let (message, coalesced) = return_errors!(helper $message, $($errors), +);
+            (message, format!("{} {}", e.to_string(), coalesced))
+        } else {
+            return_errors!(helper $message, $($errors), +)
+        }
+    };
+    ($message: expr, $($errors: ident), +) => {
+        let ($($errors), +) = match ($($errors), +) {
+            ($(Ok($errors)), +) => (($($errors), +)),
+            ($($errors), +) => {
+                let (message, coalesced) = return_errors!(helper $message, $($errors), +);
+                Err(format!("{message} {coalesced}"))?
+            }
+        };
+    }
+}
+
 pub type AnyError = Box<dyn Error + Send + Sync>;
 
 #[macro_export]

@@ -2,14 +2,15 @@ use std::{ffi::OsStr, fmt::Display, thread::sleep, time::{Duration, SystemTime}}
 
 use bon::Builder;
 use derive_more::Error;
-use fuser::{FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate,
-    ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request,
-    TimeOrNow, FUSE_ROOT_ID};
+use fuser::{FileAttr, FileType, Filesystem, KernelConfig, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request, TimeOrNow, FUSE_ROOT_ID};
 use libc::{c_int, EINVAL, ENOENT};
 use tracing::{debug, error, info, instrument, trace, warn, Level};
 
-use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, files::{TfsFile, DEFAULT_FILE_PERMISSIONS}, filesystem::TagFilesystem, inodes::{get_is_inode_root, FileInode,
-    NamespaceInode, TagInode, TagInodes}, namespaces, os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID}, storage::TfsStorage, tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL}, ResultExt, ResultExt2};
+use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, files::TfsFile,
+    filesystem::TagFilesystem, inodes::{get_is_inode_root, FileInode, NamespaceInode, TagInode,
+    TagInodes}, namespaces, os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID},
+    storage::TfsStorage, tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL},
+    ResultExt, ResultExt2};
 
 macro_rules! event_ {
     ($tracing_level: expr, $error_message: expr, $($message_arguments: expr), *) => {{
@@ -32,6 +33,14 @@ macro_rules! handle_error_reply {
     }
 }
 
+const ANY_GENERATION: u64 = 0;
+const ANY_FILE_HANDLE: u64 = 0;
+const ANY_FLAGS: u32 = 0;
+
+fn get_is_a_namespace(value: &str) -> bool {
+    value.chars().next() == Some('{')
+}
+
 // TODO(S):
 // - Some `reply.error` should not really log as an error.
 // - Sometimes the below error for `ct tag_2` when `tag2` does exist.
@@ -44,13 +53,9 @@ macro_rules! handle_error_reply {
 // - Errors need to be displayed to the user not just logged.
 // - What does TTL, generation, fh, flags do?
 // - Make some of the FUSE ops atomic
+// - Get rid of `map_err`, make `map_err_inner`.
+// - Update `when_accessed`, etc. values.
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
-    fn init(&mut self, _request: &Request<'_>, _config: &mut KernelConfig)
-        -> Result<(), c_int>
-    {
-        todo!()
-    }
-
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
     fn create(&mut self, request: &Request<'_>, parent_inode: u64,
         file_name: &OsStr, mode: u32, umask: u32, flags: i32,
@@ -352,16 +357,13 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             Err(ErrorReply::new(ENOENT, "Not child of TFS root nor a namespace."))?;
         }
 
-        let new_file = TfsFile::builder()
-            .name(file_name.to_string_lossy().clone())
-            .inode(self.get_free_file_inode()
-                .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?)
-            .owner(request.uid())
-            .group(request.gid())
-            .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16));
-
         if get_is_inode_root(parent_inode) {
-            let new_file = self.add_file(new_file.build())
+            let new_file = self.add_file()
+                .file_name(file_name.to_string_lossy().clone())
+                .owner_id(request.uid())
+                .group_id(request.gid())
+                .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16))
+                .call()
                 .map_err_inner(|e| ErrorReply::new(EINVAL, e.to_string()))?;
             // TODO: I swear this should not be needed : \
             let file_inode = new_file.inode;
@@ -382,9 +384,16 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             .get_map()
             .get(&namespace_inode)
             .ok_or(ErrorReply::new(ENOENT, format!("Namespace with id \
-                `{namespace_inode}` does not exist.")))?;
+                `{namespace_inode}` does not exist.")))?
+            .tags.clone();
 
-        let new_file = self.add_file(new_file.tags(tfs_namespace.tags.clone()).build())
+        let new_file = self.add_file()
+            .file_name(file_name.to_string_lossy().clone())
+            .owner_id(request.uid())
+            .group_id(request.gid())
+            .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16))
+            .tag_inodes(tfs_namespace)
+            .call()
             .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
         let file_inode = new_file.inode;
         let fuser_attributes = self.get_file_fuser(&file_inode)
@@ -419,15 +428,12 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
                 name `{tag_name}`.")))?;
         }
 
-        let new_tag = self.add_tag(TfsTag::builder()
-            .name(tag_name)
-            .inode(self.get_free_tag_inode()
-                .map_err_inner(|e| ErrorReply::new(
-                    EINVAL, format!("No free tag inode. {}", e.to_string())))?)
-            .owner(request.uid())
-            .group(request.gid())
+        let new_tag = self.add_tag()
+            .tag_name(tag_name)
+            .owner_id(request.uid())
+            .group_id(request.gid())
             .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16))
-            .build())
+            .call()
             .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
         let tag_inode = new_tag.inode;
         let fuser_attributes = self.get_tag_fuser(&tag_inode)
@@ -439,7 +445,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         })
     }
 
-    fn lookup_inner(&mut self, _: &Request, parent_inode: u64,
+    fn lookup_inner(&mut self, request: &Request, parent_inode: u64,
         predicate: &OsStr) -> ResultBt<LookupReply, ErrorReply>
     {
         // TODO: Is there not just a method that returns String instead of Cow?
@@ -447,12 +453,20 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
 
         if get_is_inode_root(parent_inode) {
             if get_is_a_namespace(&predicate) {
-                let namespace_inode = self.insert_namespace(predicate)
+                // TODO: Add Authorization based on tags within namespace.
+                // Deny over allow. Namespace needs to get permissions assigned.
+                let namespace_inode = self.add_namespace_with_name()
+                    .namespace_string(predicate)
+                    .owner_id(request.uid())
+                    .group_id(request.gid())
+                    .call()
                     .map_err_inner(|e| ErrorReply::new(ENOENT,
-                        format!("Namespace lookup failed. {}", e.to_string())))?;
+                        format!("Namespace lookup failed. {}", e.to_string())))?
+                    .inode;
                 return Ok(LookupReply {
                     ttl: NO_TTL,
-                    attr: namespaces::get_fuse_attributes(&namespace_inode),
+                    attr: self.get_namespace_fuser(&namespace_inode)
+                        .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?,
                     generation: ANY_GENERATION,
                     message: String::from("Completed namespace lookup.")
                 });
@@ -516,7 +530,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         if get_is_inode_root(inode_id) {
             return Ok(GetattrReply {
                 ttl: NO_TTL,
-                attr: ROOT_ATTRIBUTES,
+                attr: self.get_root_fuser(),
                 message: "Replied w/ root."
             });
         }
@@ -524,7 +538,8 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         if let Ok(namespace_inode) = NamespaceInode::try_from(inode_id) {
             return Ok(GetattrReply {
                 ttl: NO_TTL,
-                attr: namespaces::get_fuse_attributes(&namespace_inode),
+                attr: self.get_namespace_fuser(&namespace_inode)
+                    .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?,
                 message: "Replied w/ namespace."
             });
         }
@@ -768,31 +783,4 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
 
         Ok("Deleted.")
     }
-}
-
-const ANY_GENERATION: u64 = 0;
-const ANY_FILE_HANDLE: u64 = 0;
-const ANY_FLAGS: u32 = 0;
-
-// TODO/WIP: Give proper values.
-const ROOT_ATTRIBUTES: FileAttr = FileAttr {
-    ino: FUSE_ROOT_ID,
-    size: 0,
-    blocks: 0,
-    atime: SystemTime::UNIX_EPOCH,
-    mtime: SystemTime::UNIX_EPOCH,
-    ctime: SystemTime::UNIX_EPOCH,
-    crtime: SystemTime::UNIX_EPOCH,
-    kind: FileType::Directory,
-    perm: 0o755,
-    nlink: 0,
-    uid: ROOT_UID,
-    gid: ROOT_GID,
-    rdev: NO_RDEV,
-    flags: 0,
-    blksize: COMMON_BLOCK_SIZE,
-};
-
-fn get_is_a_namespace(value: &str) -> bool {
-    value.chars().next() == Some('{')
 }

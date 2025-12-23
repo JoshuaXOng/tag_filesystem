@@ -1,31 +1,33 @@
 use std::{fmt::Display, fs::File, io::BufReader, path::PathBuf, thread::sleep,
-    time::{Duration, Instant}};
+    time::{Duration, Instant, SystemTime}};
 
 use bon::bon;
 use fuser::{spawn_mount2, FileAttr, MountOption};
 use libc::SIGTERM;
+use nix::unistd::{getegid, geteuid};
 use signal_hook::iterator::Signals;
 use tracing::{info, instrument, warn};
 
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny}, files::{IndexedFiles, TfsFile},
-    inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal,
-    namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE, NO_RDEV},
-    path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
-    serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
-    storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
+use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny},
+    files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes},
+    journal::TfsJournal, namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE,
+    NO_RDEV}, path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
+    new_root_fuser, serialize_tag_filesystem, PersistedTfs}, snapshots::{PersistentSnapshots,
+    TfsSnapshots}, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
     wrappers::VecWrapper, WithBacktrace};
 
 #[derive(Debug)]
 pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
 where Storage: TfsStorage, Snapshots: TfsSnapshots {
+    root: FileAttr,
     files: IndexedFiles,
     tags: IndexedTags,
     namespaces: IndexedNamepsaces,
     storage: Storage,
     snapshots: Snapshots,
-    journal: TfsJournal
+    journal: TfsJournal,
 }
 
 impl TagFilesystem {
@@ -36,9 +38,19 @@ impl TagFilesystem {
         let filesystem_snapshots = PersistentSnapshots::try_new(mount_path)?;
         let mut indexed_files = IndexedFiles::new();
         let mut indexed_tags = IndexedTags::new();
+        let mut root_fuser = new_root_fuser()
+            .uid(geteuid().as_raw())
+            .gid(getegid().as_raw())
+            .permissions(0o755)
+            .when_accessed(SystemTime::now())
+            .when_modified(SystemTime::now())
+            .when_changed(SystemTime::now())
+            .when_created(SystemTime::now())
+            .call();
         if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
-            let (persisted_files, persisted_tags) = deserialize_tag_filesystem(
-                BufReader::new(&safe_snapshot))?;
+            let PersistedTfs { root: _root_fuser, files: persisted_files, tags: persisted_tags }
+                = deserialize_tag_filesystem(BufReader::new(&safe_snapshot))?;
+            root_fuser = _root_fuser;
             for persisted_file in persisted_files {
                 indexed_files.add(persisted_file)?;
             }
@@ -47,6 +59,7 @@ impl TagFilesystem {
             }
         }
         Ok(Self {
+            root: root_fuser,
             files: indexed_files,
             tags: indexed_tags,
             namespaces: IndexedNamepsaces::new(),
@@ -94,6 +107,10 @@ impl TagFilesystem {
 #[bon]
 impl<Storage, Snapshots> TagFilesystem<Storage, Snapshots>
 where Storage: TfsStorage, Snapshots: TfsSnapshots {
+    pub fn get_root_fuser(&self) -> FileAttr {
+        self.root
+    }
+
     pub fn get_files(&self) -> &IndexedFiles {
         &self.files
     }
@@ -184,6 +201,20 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             .map(|tag| tag.name.as_str())))
     }
 
+    pub fn get_tag_inodes_from_namespace_string(&self, namespace_string: &str)
+        -> ResultBtAny<TagInodes>
+    {
+        let namespace_tags = parse_tags(&namespace_string);
+        let mut _namespace_tags = TagInodes::new(); 
+        for namespace_tag in namespace_tags {
+            let namespace_tag = self.tags.get_by_name(namespace_tag)
+                .ok_or(format!("`{namespace_tag}` does not exist."))?;
+
+            _namespace_tags.0.insert(namespace_tag.inode);
+        }
+        Ok(_namespace_tags)
+    }
+
     pub fn get_fuser_attributes(&self, inode_id: u64) -> ResultBtAny<FileAttr> {
         FileInode::try_from(inode_id)
             .and_then(|inode| self.get_file_fuser(&inode))
@@ -213,7 +244,10 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn get_namespace_fuser(&self, namespace_inode: &NamespaceInode) -> ResultBtAny<FileAttr> {
-        Ok(namespaces::get_fuse_attributes(&namespace_inode))
+        let target_namespace = self.namespaces.get_by_inode(&namespace_inode)?;
+        Ok(Self::to_fuser()
+            .tfs_entry(target_namespace)
+            .call())
     }
 
     #[builder]
@@ -329,20 +363,86 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         &self.storage
     }
 
-    pub fn add_file(&mut self, to_add: TfsFile) -> ResultBtAny<&TfsFile> {
-        self.check_if_file_is_valid(&to_add)?;
-        self.write_to_file(&to_add.inode, 0, &[])?;
-        self.files.add(to_add)
+    #[builder]
+    pub fn add_file(&mut self, file_name: impl Into<String>, owner_id: u32, group_id: u32,
+        permissions: Option<u16>,
+        when_accessed: Option<SystemTime>, when_modified: Option<SystemTime>,
+        when_changed: Option<SystemTime>, when_created: Option<SystemTime>,
+        tag_inodes: Option<TagInodes>)
+        -> ResultBtAny<&TfsFile>
+    {
+        let mut tfs_file = TfsFile::builder()
+            .name(file_name.into())
+            .inode(self.get_free_file_inode()?)
+            .owner(owner_id)
+            .group(group_id)
+            .build();
+        permissions.inspect(|perm| tfs_file.permissions = *perm);
+        when_accessed.inspect(|when| tfs_file.when_accessed = *when);
+        when_modified.inspect(|when| tfs_file.when_modified = *when);
+        when_changed.inspect(|when| tfs_file.when_changed = *when);
+        when_created.inspect(|when| tfs_file.when_created = *when);
+        if let Some(tag_inodes) = tag_inodes {
+            tfs_file.tags = tag_inodes;
+        }
+        self.check_if_file_is_valid(&tfs_file)?;
+        self.write_to_file(&tfs_file.inode, 0, &[])?;
+        self.files.add(tfs_file)
     }
 
-    pub fn add_tag(&mut self, to_add: TfsTag) -> ResultBtAny<&TfsTag> {
-        self.check_if_tag_is_valid_(&to_add)?;
-        self.tags.add(to_add)
+    #[builder]
+    pub fn add_tag(&mut self, tag_name: impl Into<String>, owner_id: u32, group_id: u32,
+        permissions: Option<u16>,
+        when_accessed: Option<SystemTime>, when_modified: Option<SystemTime>,
+        when_changed: Option<SystemTime>, when_created: Option<SystemTime>)
+        -> ResultBtAny<&TfsTag>
+    {
+        let mut tfs_tag = TfsTag::builder()
+            .name(tag_name.into())
+            .inode(self.get_free_tag_inode()?)
+            .owner(owner_id)
+            .group(group_id)
+            .build();
+        permissions.inspect(|perm| tfs_tag.permissions = *perm);
+        when_accessed.inspect(|when| tfs_tag.when_accessed = *when);
+        when_modified.inspect(|when| tfs_tag.when_modified = *when);
+        when_changed.inspect(|when| tfs_tag.when_changed = *when);
+        when_created.inspect(|when| tfs_tag.when_created = *when);
+        self.check_if_tag_is_valid_(&tfs_tag)?;
+        self.tags.add(tfs_tag)
     }
 
+    #[builder]
+    pub fn add_namespace_with_name(&mut self, namespace_string: String, owner_id: u32,
+        group_id: u32) -> ResultBtAny<&TfsNamespace>
+    {
+        let namespace_tags = self.get_tag_inodes_from_namespace_string(&namespace_string)?;
+        self.namespaces.add(TfsNamespace::builder()
+            .name(namespace_string)
+            .inode(self.get_free_namespace_inode()?)
+            .tags(namespace_tags)
+            .owner(owner_id)
+            .group(group_id)
+            .build())
+    }
+
+    #[builder]
+    pub fn add_namespace_with_tag_inodes(&mut self, tag_inodes: TagInodes, owner_id: u32,
+        group_id: u32) -> ResultBtAny<&TfsNamespace>
+    {
+        self.namespaces.add(TfsNamespace::builder()
+            .name(Self::get_namespace_string_from_tags(&self.tags, &tag_inodes)?)
+            .inode(self.get_free_namespace_inode()?)
+            .tags(tag_inodes)
+            .owner(owner_id)
+            .group(group_id)
+            .build())
+    }
+    
     pub fn save_persistently(&self) -> ResultBtAny<()> {
         serialize_tag_filesystem(
             &self.snapshots.create_staging()?,
+            &self.get_root_fuser(),
             self.files.get_all().collect(),
             self.tags.get_all().collect())?;
         self.snapshots.promote_staging()?;
@@ -422,32 +522,6 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
-    pub fn insert_namespace(&mut self, namespace_string: String) -> ResultBtAny<NamespaceInode> {
-        let namespace_tags = parse_tags(&namespace_string);
-
-        let mut _namespace_tags = TagInodes::new(); 
-        for namespace_tag in namespace_tags {
-            let namespace_tag = self.tags.get_by_name(namespace_tag)
-                .ok_or(format!("`{namespace_tag}` does not exist."))?;
-
-            _namespace_tags.0.insert(namespace_tag.inode);
-        }
-
-        self.namespaces.add(TfsNamespace::builder()
-            .name(namespace_string)
-            .inode(self.get_free_namespace_inode()?)
-            .tags(_namespace_tags)
-            .build())
-    }
-
-    pub fn insert_namespace_(&mut self, tag_inodes: TagInodes) -> ResultBtAny<NamespaceInode> {
-        self.namespaces.add(TfsNamespace::builder()
-            .name(Self::get_namespace_string_from_tags(&self.tags, &tag_inodes)?)
-            .inode(self.get_free_namespace_inode()?)
-            .tags(tag_inodes)
-            .build())
-    }
-    
     pub fn remove_file_by_name_and_tags<'a>(&mut self, file_name: &str,
         tag_inodes: impl Into<&'a TagInodes>)
     -> ResultBtAny<TfsFile> {
@@ -513,7 +587,10 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 #[cfg(test)]
 impl TagFilesystem<StubStorage, StubSnapshots> {
     pub fn new() -> Self {
+        use crate::os::{ROOT_GID, ROOT_UID};
+
         Self {
+            root: new_root_fuser_(),
             files: IndexedFiles::new(),
             tags: IndexedTags::new(),
             namespaces: IndexedNamepsaces::new(),
@@ -522,4 +599,19 @@ impl TagFilesystem<StubStorage, StubSnapshots> {
             journal: TfsJournal::new(),
         }
     }
+}
+
+#[cfg(test)]
+pub fn new_root_fuser_() -> FileAttr {
+    use crate::os::{ROOT_GID, ROOT_UID};
+
+    new_root_fuser()
+        .uid(ROOT_UID)
+        .gid(ROOT_GID)
+        .permissions(0o755)
+        .when_accessed(SystemTime::now())
+        .when_modified(SystemTime::now())
+        .when_changed(SystemTime::now())
+        .when_created(SystemTime::now())
+        .call()
 }

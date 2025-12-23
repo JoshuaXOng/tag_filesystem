@@ -1,17 +1,73 @@
 use std::{collections::HashMap, fmt::Display, time::SystemTime};
 
 use bon::Builder;
-use fuser::{FileAttr, FileType};
+use fuser::FileType;
 
-use crate::{errors::ResultBtAny, inodes::{NamespaceInode, TagInodes},
-    os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID}, wrappers::write_iter};
+use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{NamespaceInode, TagInodes},
+    wrappers::write_iter};
+
+pub const DEFAULT_NAMESPACE_PERMISSIONS: u16 = 0o777;
 
 #[derive(Builder, Debug)]
 #[builder(on(String, into))]
 pub struct TfsNamespace {
     pub name: String,
     pub inode: NamespaceInode,
-    pub tags: TagInodes
+    pub tags: TagInodes,
+    pub owner: u32,
+    pub group: u32,
+    #[builder(default = DEFAULT_NAMESPACE_PERMISSIONS)]
+    pub permissions: u16,
+    #[builder(default = SystemTime::now())]
+    pub when_accessed: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_modified: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_changed: SystemTime,
+    #[builder(default = SystemTime::now())]
+    pub when_created: SystemTime
+}
+
+impl TfsEntry for TfsNamespace {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_inode_id(&self) -> u64 {
+        self.inode.get_id()
+    }
+
+    fn get_owner(&self) -> u32 {
+        self.owner
+    }
+
+    fn get_group(&self) -> u32 {
+        self.group
+    }
+
+    fn get_permissions(&self) -> u16 {
+        self.permissions
+    }
+
+    fn get_file_kind(&self) -> FileType {
+        FileType::Directory
+    }
+
+    fn get_when_accessed(&self) -> SystemTime {
+        self.when_accessed
+    }
+
+    fn get_when_modified(&self) -> SystemTime {
+        self.when_modified
+    }
+
+    fn get_when_changed(&self) -> SystemTime {
+        self.when_changed
+    }
+
+    fn get_when_created(&self) -> SystemTime {
+        self.when_created
+    }
 }
 
 impl<'a> From<&'a TfsNamespace> for &'a TagInodes {
@@ -81,7 +137,7 @@ impl IndexedNamepsaces {
         NamespaceInode::try_from_free_inodes(inodes_inuse)
     }
 
-    pub fn add(&mut self, to_add: TfsNamespace) -> ResultBtAny<NamespaceInode> {
+    pub fn add(&mut self, to_add: TfsNamespace) -> ResultBtAny<&TfsNamespace> {
         let namespace_inode = to_add.inode;
 
         let does_conflict = self.namespaces.get(&namespace_inode).is_some();
@@ -90,7 +146,8 @@ impl IndexedNamepsaces {
         }
         
         self.namespaces.insert(namespace_inode, to_add);
-        Ok(namespace_inode)
+        Ok(self.namespaces.get(&namespace_inode)
+            .expect("To have just inserted with inode prior."))
     }
 
     pub fn do_for_all<'a, T>(&'a mut self,
@@ -127,26 +184,5 @@ impl<'a> From<&'a mut TfsNamespace> for NamespaceUpdate<'a> {
             inode: &mut value.inode,
             tags: &mut value.tags
         }
-    }
-}
-
-pub fn get_fuse_attributes(namespace_inode: &NamespaceInode) -> FileAttr {
-    FileAttr {
-        ino: namespace_inode.get_id(),
-        size: 0,
-        blocks: 0,
-        atime: SystemTime::UNIX_EPOCH,
-        mtime: SystemTime::UNIX_EPOCH,
-        ctime: SystemTime::UNIX_EPOCH,
-        crtime: SystemTime::UNIX_EPOCH,
-        kind: FileType::Directory,
-        perm: 0o777,
-        nlink: 0,
-        // TODO/WIP: Is this right?
-        uid: ROOT_UID,
-        gid: ROOT_GID,
-        rdev: NO_RDEV,
-        blksize: COMMON_BLOCK_SIZE,
-        flags: 0
     }
 }

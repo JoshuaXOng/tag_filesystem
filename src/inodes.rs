@@ -33,6 +33,7 @@ fn generate_jumpoff_inode() -> u64 {
     random_range(unscaled_start..=unscaled_end) * INODE_TYPE_COUNT
 }
 
+// TODO: Maybe put timer on this and return no free inode.
 fn generate_free_inode_<'a, T, R>(
     mut inodes_inuse: impl Itertools<Item = &'a T>,
     type_remainder: u64) -> ResultBtAny<R>
