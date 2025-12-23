@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(unused))]
 
 capnp::generated_code!(pub mod filesystem_capnp);
+capnp::generated_code!(pub mod root_capnp);
 capnp::generated_code!(pub mod file_capnp);
 capnp::generated_code!(pub mod tag_capnp);
 

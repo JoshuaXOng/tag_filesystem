@@ -2,14 +2,15 @@ use std::{ffi::OsStr, fmt::Display, thread::sleep, time::{Duration, SystemTime}}
 
 use bon::Builder;
 use derive_more::Error;
-use fuser::{FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate,
-    ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request,
-    TimeOrNow, FUSE_ROOT_ID};
+use fuser::{FileAttr, FileType, Filesystem, KernelConfig, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request, TimeOrNow, FUSE_ROOT_ID};
 use libc::{c_int, EINVAL, ENOENT};
 use tracing::{debug, error, info, instrument, trace, warn, Level};
 
-use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, files::{TfsFile, DEFAULT_FILE_PERMISSIONS}, filesystem::TagFilesystem, inodes::{get_is_inode_root, FileInode,
-    NamespaceInode, TagInode, TagInodes}, namespaces, os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID}, storage::TfsStorage, tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL}, ResultExt, ResultExt2};
+use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, files::TfsFile,
+    filesystem::TagFilesystem, inodes::{get_is_inode_root, FileInode, NamespaceInode, TagInode,
+    TagInodes}, namespaces, os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID},
+    storage::TfsStorage, tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL},
+    ResultExt, ResultExt2};
 
 macro_rules! event_ {
     ($tracing_level: expr, $error_message: expr, $($message_arguments: expr), *) => {{
@@ -32,6 +33,14 @@ macro_rules! handle_error_reply {
     }
 }
 
+const ANY_GENERATION: u64 = 0;
+const ANY_FILE_HANDLE: u64 = 0;
+const ANY_FLAGS: u32 = 0;
+
+fn get_is_a_namespace(value: &str) -> bool {
+    value.chars().next() == Some('{')
+}
+
 // TODO(S):
 // - Some `reply.error` should not really log as an error.
 // - Sometimes the below error for `ct tag_2` when `tag2` does exist.
@@ -45,12 +54,6 @@ macro_rules! handle_error_reply {
 // - What does TTL, generation, fh, flags do?
 // - Make some of the FUSE ops atomic
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
-    fn init(&mut self, _request: &Request<'_>, _config: &mut KernelConfig)
-        -> Result<(), c_int>
-    {
-        todo!()
-    }
-
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
     fn create(&mut self, request: &Request<'_>, parent_inode: u64,
         file_name: &OsStr, mode: u32, umask: u32, flags: i32,
@@ -516,7 +519,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         if get_is_inode_root(inode_id) {
             return Ok(GetattrReply {
                 ttl: NO_TTL,
-                attr: ROOT_ATTRIBUTES,
+                attr: self.get_root_fuser(),
                 message: "Replied w/ root."
             });
         }
@@ -768,31 +771,4 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
 
         Ok("Deleted.")
     }
-}
-
-const ANY_GENERATION: u64 = 0;
-const ANY_FILE_HANDLE: u64 = 0;
-const ANY_FLAGS: u32 = 0;
-
-// TODO/WIP: Give proper values.
-const ROOT_ATTRIBUTES: FileAttr = FileAttr {
-    ino: FUSE_ROOT_ID,
-    size: 0,
-    blocks: 0,
-    atime: SystemTime::UNIX_EPOCH,
-    mtime: SystemTime::UNIX_EPOCH,
-    ctime: SystemTime::UNIX_EPOCH,
-    crtime: SystemTime::UNIX_EPOCH,
-    kind: FileType::Directory,
-    perm: 0o755,
-    nlink: 0,
-    uid: ROOT_UID,
-    gid: ROOT_GID,
-    rdev: NO_RDEV,
-    flags: 0,
-    blksize: COMMON_BLOCK_SIZE,
-};
-
-fn get_is_a_namespace(value: &str) -> bool {
-    value.chars().next() == Some('{')
 }

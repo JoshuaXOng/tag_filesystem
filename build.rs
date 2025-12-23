@@ -9,6 +9,7 @@ fn main() {
     CompilerCommand::new()
         .src_prefix(&schemas_directory)
         .file(schemas_directory.join("filesystem.capnp"))
+        .file(schemas_directory.join("root.capnp"))
         .file(schemas_directory.join("file.capnp"))
         .file(schemas_directory.join("tag.capnp"))
         .run()

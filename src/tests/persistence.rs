@@ -1,12 +1,16 @@
 use std::io::Cursor;
 
-use crate::{files::TfsFile, persistence::{deserialize_tag_filesystem,
-    serialize_tag_filesystem}, tags::TfsTag};
+use crate::{files::TfsFile, filesystem::new_root_fuser_, persistence::{deserialize_tag_filesystem,
+    serialize_tag_filesystem, PersistedTfs}, tags::TfsTag};
 
 #[test]
 fn running_tag_filesystem_serdeialization() {
     let mut persistence_location = vec![];
-    serialize_tag_filesystem(&mut persistence_location, vec![
+    let root_fuser = new_root_fuser_();
+    serialize_tag_filesystem(
+        &mut persistence_location,
+        &root_fuser,
+        vec![
             &TfsFile::builder()
                 .name(String::from("test_file_a"))
                 .inode(3.try_into().unwrap())
@@ -40,8 +44,9 @@ fn running_tag_filesystem_serdeialization() {
                 .group(1000)
                 .build()
         ]);
-    let (recovered_files, recovered_tags) =
-        deserialize_tag_filesystem(Cursor::new(persistence_location)).unwrap();
+    let PersistedTfs { root: _root_fuser, files: recovered_files, tags: recovered_tags }
+        = deserialize_tag_filesystem(Cursor::new(persistence_location)).unwrap();
+    assert_eq!(root_fuser, _root_fuser);
     let (rf, rt) = (recovered_files, recovered_tags);
 
     assert_eq!(rf.len(), 2);

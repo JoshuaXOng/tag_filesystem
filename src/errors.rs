@@ -39,6 +39,51 @@ pub fn collect_errors<T, E: Display>(errors: impl Iterator<Item = ResultBt<T, E>
     Ok(())
 }
 
+#[macro_export]
+macro_rules! coalesce {
+    (helper $message: expr, $error: ident) => {
+        if let Err(e) = $error { format!("{} {}", $message, e.to_string()) }
+        else { $message.to_string() }
+    };
+    (helper $message: expr, $error: ident, $($errors: ident), +) => {
+        if let Err(e) = $error { 
+            let running = coalesce!(helper $message, $($errors), +);
+            format!("{} {}", running, e.to_string())
+        } else {
+            coalesce!(helper $message, $($errors), +)
+        }
+    };
+    ($message: expr, $($errors: ident), +) => {
+        match ($($errors), +) {
+            ($(Ok($errors)), +) => Ok(($($errors), +)),
+            ($($errors), +) => Err(coalesce!(helper $message, $($errors), +))
+        }
+    }
+}
+
+// TODO/WIP: Choose
+#[macro_export]
+macro_rules! coalescerr {
+    (helper $message: expr, $error: ident) => {
+        if let Err(e) = $error { format!("{} {}", $message, e.to_string()) }
+        else { $message.to_string() }
+    };
+    (helper $message: expr, $error: ident, $($errors: ident), +) => {
+        if let Err(e) = $error { 
+            let running = coalescerr!(helper $message, $($errors), +);
+            format!("{} {}", running, e.to_string())
+        } else {
+            coalescerr!(helper $message, $($errors), +)
+        }
+    };
+    ($message: expr, $($errors: ident), +) => {
+        let ($($errors), +) = match ($($errors), +) {
+            ($(Ok($errors)), +) => (($($errors), +)),
+            ($($errors), +) => Err(coalescerr!(helper $message, $($errors), +))?
+        };
+    }
+}
+
 pub type AnyError = Box<dyn Error + Send + Sync>;
 
 #[macro_export]

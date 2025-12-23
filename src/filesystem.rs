@@ -1,31 +1,32 @@
 use std::{fmt::Display, fs::File, io::BufReader, path::PathBuf, thread::sleep,
-    time::{Duration, Instant}};
+    time::{Duration, Instant, SystemTime}};
 
 use bon::bon;
 use fuser::{spawn_mount2, FileAttr, MountOption};
 use libc::SIGTERM;
+use nix::unistd::{getegid, geteuid};
 use signal_hook::iterator::Signals;
 use tracing::{info, instrument, warn};
 
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny}, files::{IndexedFiles, TfsFile},
-    inodes::{FileInode, NamespaceInode, TagInode, TagInodes}, journal::TfsJournal,
-    namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE, NO_RDEV},
-    path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
-    serialize_tag_filesystem}, snapshots::{PersistentSnapshots, TfsSnapshots},
-    storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
-    wrappers::VecWrapper, WithBacktrace};
+use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny},
+    files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes},
+    journal::TfsJournal, namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE,
+    NO_RDEV}, path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem, new_root_fuser, serialize_tag_filesystem, PersistedTfs}, snapshots::{PersistentSnapshots, TfsSnapshots},
+    storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag}, wrappers::VecWrapper,
+    WithBacktrace};
 
 #[derive(Debug)]
 pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
 where Storage: TfsStorage, Snapshots: TfsSnapshots {
+    root: FileAttr,
     files: IndexedFiles,
     tags: IndexedTags,
     namespaces: IndexedNamepsaces,
     storage: Storage,
     snapshots: Snapshots,
-    journal: TfsJournal
+    journal: TfsJournal,
 }
 
 impl TagFilesystem {
@@ -36,9 +37,19 @@ impl TagFilesystem {
         let filesystem_snapshots = PersistentSnapshots::try_new(mount_path)?;
         let mut indexed_files = IndexedFiles::new();
         let mut indexed_tags = IndexedTags::new();
+        let mut root_fuser = new_root_fuser()
+            .uid(geteuid().as_raw())
+            .gid(getegid().as_raw())
+            .permissions(0o755)
+            .when_accessed(SystemTime::now())
+            .when_modified(SystemTime::now())
+            .when_changed(SystemTime::now())
+            .when_created(SystemTime::now())
+            .call();
         if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
-            let (persisted_files, persisted_tags) = deserialize_tag_filesystem(
-                BufReader::new(&safe_snapshot))?;
+            let PersistedTfs { root: _root_fuser, files: persisted_files, tags: persisted_tags }
+                = deserialize_tag_filesystem(BufReader::new(&safe_snapshot))?;
+            root_fuser = _root_fuser;
             for persisted_file in persisted_files {
                 indexed_files.add(persisted_file)?;
             }
@@ -47,6 +58,7 @@ impl TagFilesystem {
             }
         }
         Ok(Self {
+            root: root_fuser,
             files: indexed_files,
             tags: indexed_tags,
             namespaces: IndexedNamepsaces::new(),
@@ -94,6 +106,10 @@ impl TagFilesystem {
 #[bon]
 impl<Storage, Snapshots> TagFilesystem<Storage, Snapshots>
 where Storage: TfsStorage, Snapshots: TfsSnapshots {
+    pub fn get_root_fuser(&self) -> FileAttr {
+        self.root
+    }
+
     pub fn get_files(&self) -> &IndexedFiles {
         &self.files
     }
@@ -343,6 +359,7 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     pub fn save_persistently(&self) -> ResultBtAny<()> {
         serialize_tag_filesystem(
             &self.snapshots.create_staging()?,
+            &self.get_root_fuser(),
             self.files.get_all().collect(),
             self.tags.get_all().collect())?;
         self.snapshots.promote_staging()?;
@@ -513,7 +530,10 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 #[cfg(test)]
 impl TagFilesystem<StubStorage, StubSnapshots> {
     pub fn new() -> Self {
+        use crate::os::{ROOT_GID, ROOT_UID};
+
         Self {
+            root: new_root_fuser_(),
             files: IndexedFiles::new(),
             tags: IndexedTags::new(),
             namespaces: IndexedNamepsaces::new(),
@@ -522,4 +542,19 @@ impl TagFilesystem<StubStorage, StubSnapshots> {
             journal: TfsJournal::new(),
         }
     }
+}
+
+#[cfg(test)]
+pub fn new_root_fuser_() -> FileAttr {
+    use crate::os::{ROOT_GID, ROOT_UID};
+
+    new_root_fuser()
+        .uid(ROOT_UID)
+        .gid(ROOT_GID)
+        .permissions(0o755)
+        .when_accessed(SystemTime::now())
+        .when_modified(SystemTime::now())
+        .when_changed(SystemTime::now())
+        .when_created(SystemTime::now())
+        .call()
 }
