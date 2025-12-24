@@ -4,7 +4,9 @@ use bon::builder;
 use capnp::{message::{self, ReaderOptions}, serialize_packed};
 use fuser::{FileAttr, FileType, FUSE_ROOT_ID};
 
-use crate::{coalesce, coalescerr, errors::{AnyError, ResultBtAny}, files::TfsFile, filesystem_capnp::tag_filesystem, inodes::{FileInode, TagInode}, os::{COMMON_BLOCK_SIZE, NO_RDEV}, tags::TfsTag, ResultExt};
+use crate::{return_errors, errors::{AnyError, ResultBtAny}, files::TfsFile,
+    filesystem_capnp::tag_filesystem, inodes::{FileInode, TagInode},
+    os::{COMMON_BLOCK_SIZE, NO_RDEV}, tags::TfsTag, ResultExt};
 
 macro_rules! get_system_times {
     ($capnp_reader: ident) => {
@@ -34,7 +36,6 @@ pub fn new_root_fuser(uid: u32, gid: u32, permissions: u16, when_accessed: Syste
     when_modified: SystemTime, when_changed: SystemTime, when_created: SystemTime)
     -> FileAttr
 {
-    // TODO/WIP: Give proper values.
     FileAttr {
         ino: FUSE_ROOT_ID,
         size: 0,
@@ -67,13 +68,11 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
         ReaderOptions::new())?;
     let capnp_filesystem = capnp_message.get_root::<tag_filesystem::Reader>()?;
 
-    // TODO/WIP: Get rid of map_err, make map_err_inner.
     let root_fuser = capnp_filesystem.get_root()?;
     let (when_accessed, when_modified, when_changed, when_created)
         = get_system_times!(root_fuser);
-    let (when_accessed, when_modified, when_changed, when_created) = coalesce!(
-        "For root FUSE attributes not all fields could be deserialized.",
-        when_accessed, when_modified, when_changed, when_created)?;
+    return_errors!("For root FUSE attributes not all fields could be deserialized.",
+        when_accessed, when_modified, when_changed, when_created);
     let _root_fuser = new_root_fuser()
         .uid(root_fuser.get_owner())
         .gid(root_fuser.get_group())
@@ -114,13 +113,10 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
                 Ok(_inodes.into_iter())
             });
 
-        let (file_name, file_inode,
-            when_accessed, when_modified, when_changed, when_created,
-            tag_inodes)
-            = coalesce!("Not all file fields could be deserialized.",
+        return_errors!("Not all file fields could be deserialized.",
             file_name, file_inode,
             when_accessed, when_modified, when_changed, when_created,
-            tag_inodes)?;
+            tag_inodes);
         
         tfs_files.push(TfsFile { 
             name: file_name,
@@ -146,11 +142,9 @@ pub fn deserialize_tag_filesystem(read_location: impl BufRead)
         let (when_accessed, when_modified, when_changed, when_created)
             = get_system_times!(capnp_tag);
 
-        let (tag_name, tag_inode,
-            when_accessed, when_modified, when_changed, when_created)
-            = coalesce!("Not all tag fields could be deserialized.",
+        return_errors!("Not all tag fields could be deserialized.",
             tag_name, tag_inode,
-            when_accessed, when_modified, when_changed, when_created)?;
+            when_accessed, when_modified, when_changed, when_created);
 
         tfs_tags.push(TfsTag { 
             name: tag_name,
@@ -188,11 +182,16 @@ pub fn serialize_tag_filesystem(write_location: impl Write, root_fuser: &FileAtt
     let when_modified = root_fuser.mtime.duration_since(UNIX_EPOCH);
     let when_changed = root_fuser.ctime.duration_since(UNIX_EPOCH);
     let when_created = root_fuser.crtime.duration_since(UNIX_EPOCH);
-    coalescerr!("For root FUSE attributes not all fields could be serialized.", when_accessed, when_modified, when_changed, when_created);
+    return_errors!("For root FUSE attributes not all fields could be serialized.",
+        when_accessed, when_modified, when_changed, when_created);
     _root_fuser.set_when_accessed_seconds(when_accessed.as_secs());
+    _root_fuser.set_when_accessed_nanoseconds(when_accessed.subsec_nanos());
     _root_fuser.set_when_modified_seconds(when_modified.as_secs());
+    _root_fuser.set_when_modified_nanoseconds(when_modified.subsec_nanos());
     _root_fuser.set_when_changed_seconds(when_changed.as_secs());
+    _root_fuser.set_when_changed_nanoseconds(when_changed.subsec_nanos());
     _root_fuser.set_when_created_seconds(when_created.as_secs());
+    _root_fuser.set_when_created_nanoseconds(when_created.subsec_nanos());
 
     let file_count = tfs_files.len();
     let file_count = CapnpType::try_from(file_count)
@@ -208,30 +207,26 @@ pub fn serialize_tag_filesystem(write_location: impl Write, root_fuser: &FileAtt
         let file_tags = &tfs_file.tags.0;
         let tags_count = CapnpType::try_from(file_tags.len());
 
-        match (when_accessed, when_modified, when_changed, tags_count) {
-            (Ok(accessed), Ok(modified), Ok(changed), Ok(tags_count)) => {
-                let mut capnp_file = capnp_files.reborrow().get(file_index);
-                capnp_file.set_name(tfs_file.name.clone());
-                capnp_file.set_inode(tfs_file.inode.get_id());
-                capnp_file.set_owner(tfs_file.owner);
-                capnp_file.set_group(tfs_file.group);
-                capnp_file.set_permissions(tfs_file.permissions);
-                capnp_file.set_when_accessed_seconds(accessed.as_secs());
-                capnp_file.set_when_modified_seconds(modified.as_secs());
-                capnp_file.set_when_changed_seconds(changed.as_secs());
-                let mut capnp_tags = capnp_file.init_tags(tags_count);
-                for (tag_index, file_tag) in file_tags.iter().enumerate() {
-                    capnp_tags.set(CapnpType::try_from(tag_index)?, file_tag.get_id());
-                } 
-            },
-            (accessed, modified, changed, tags_count) => {
-                return Err(format!("For file with name `{}` and inode `{}`, \
-                    not all fields could be serialized: \
-                    accessed `{accessed:?}`, modified `{modified:?}`, \
-                    changed `{changed:?}`, tags count `{tags_count:?}.",
-                    tfs_file.name, tfs_file.inode).into());
-            }
-        }
+        return_errors!(format!("For file with name `{}` and inode `{}`, not all \
+            fields could be serialized.", tfs_file.name, tfs_file.inode),
+            when_accessed, when_modified, when_changed, tags_count);
+
+        let mut capnp_file = capnp_files.reborrow().get(file_index);
+        capnp_file.set_name(tfs_file.name.clone());
+        capnp_file.set_inode(tfs_file.inode.get_id());
+        capnp_file.set_owner(tfs_file.owner);
+        capnp_file.set_group(tfs_file.group);
+        capnp_file.set_permissions(tfs_file.permissions);
+        capnp_file.set_when_accessed_seconds(when_accessed.as_secs());
+        capnp_file.set_when_accessed_nanoseconds(when_accessed.subsec_nanos());
+        capnp_file.set_when_modified_seconds(when_modified.as_secs());
+        capnp_file.set_when_modified_nanoseconds(when_modified.subsec_nanos());
+        capnp_file.set_when_changed_seconds(when_changed.as_secs());
+        capnp_file.set_when_changed_nanoseconds(when_changed.subsec_nanos());
+        let mut capnp_tags = capnp_file.init_tags(tags_count);
+        for (tag_index, file_tag) in file_tags.iter().enumerate() {
+            capnp_tags.set(CapnpType::try_from(tag_index)?, file_tag.get_id());
+        } 
     }
 
     let tag_count = tfs_tags.len();
@@ -246,39 +241,27 @@ pub fn serialize_tag_filesystem(write_location: impl Write, root_fuser: &FileAtt
         let when_modified = tfs_tag.when_modified.duration_since(UNIX_EPOCH);
         let when_changed = tfs_tag.when_changed.duration_since(UNIX_EPOCH);
 
-        match (when_accessed, when_modified, when_changed) {
-            (Ok(accessed), Ok(modified), Ok(changed)) => {
-                let mut capnp_tag = capnp_tags.reborrow().get(tag_index);
-                capnp_tag.set_name(tfs_tag.name.clone());
-                capnp_tag.set_inode(tfs_tag.inode.get_id());
-                capnp_tag.set_owner(tfs_tag.owner);
-                capnp_tag.set_group(tfs_tag.group);
-                capnp_tag.set_permissions(tfs_tag.permissions);
-                capnp_tag.set_when_accessed_seconds(accessed.as_secs());
-                capnp_tag.set_when_modified_seconds(modified.as_secs());
-                capnp_tag.set_when_changed_seconds(changed.as_secs());
-            },
-            (accessed, modified, changed) => {
-                return Err(format!("For tag with name `{}` and inode `{}`, \
-                    not all fields could be serialized: \
-                    accessed `{accessed:?}`, modified `{modified:?}`, \
-                    changed `{changed:?}`.",
-                    tfs_tag.name, tfs_tag.inode).into());
-            }
-        }
+        return_errors!(format!("For tag with name `{}` and inode `{}`, not all \
+            fields could be serialized.", tfs_tag.name, tfs_tag.inode),
+            when_accessed, when_modified, when_changed);
+
+        let mut capnp_tag = capnp_tags.reborrow().get(tag_index);
+        capnp_tag.set_name(tfs_tag.name.clone());
+        capnp_tag.set_inode(tfs_tag.inode.get_id());
+        capnp_tag.set_owner(tfs_tag.owner);
+        capnp_tag.set_group(tfs_tag.group);
+        capnp_tag.set_permissions(tfs_tag.permissions);
+        capnp_tag.set_when_accessed_seconds(when_accessed.as_secs());
+        capnp_tag.set_when_accessed_nanoseconds(when_accessed.subsec_nanos());
+        capnp_tag.set_when_modified_seconds(when_modified.as_secs());
+        capnp_tag.set_when_modified_nanoseconds(when_modified.subsec_nanos());
+        capnp_tag.set_when_changed_seconds(when_changed.as_secs());
+        capnp_tag.set_when_changed_nanoseconds(when_changed.subsec_nanos());
     }
 
     serialize_packed::write_message(write_location, &capnp_message)?;
 
     Ok(())
-}
-
-// TODO/WIP: Use nanos.
-#[deprecated]
-fn as_system_time_unix_epoch(unix_epoch: u64) -> ResultBtAny<SystemTime> {
-    UNIX_EPOCH.checked_add(
-        Duration::from_secs(unix_epoch))
-        .ok_or(format!("Invalid Unix epoch, `{}`.", unix_epoch).into())
 }
 
 fn new_unix_epoch(seconds: u64, nanoseconds: u32) -> ResultBtAny<SystemTime> {

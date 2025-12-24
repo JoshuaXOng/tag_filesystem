@@ -1,4 +1,4 @@
-use crate::{coalesce, errors::{AnyError, ResultBtAny}, unwrap_or};
+use crate::{errors::{AnyError, ResultBtAny}, return_errors, unwrap_or, WithBacktrace};
 
 #[test]
 fn executing_unwrap_or_on_result() {
@@ -34,16 +34,48 @@ fn executing_unwrap_or_on_option() {
     });
     assert!(did_execute);
 }
-//
+
 // TODO: You can return `Result` from tests now? Convert.
 #[test]
-fn running_coalesce() {
-    let result_1 = Err::<u32, _>("Could not find the wrench.");
-    let result_2 = Ok::<u32, &'static str>(67);
-    let result_3 = Err::<u32, _>("Salt grains were too big for the salt shaker.");
-    let e = coalesce!("Not all checks passed.", result_1, result_2, result_3)
-        .unwrap_err();
+fn running_return_errors() {
+    let e = running_return_errors_with_errrors_as_fraction().unwrap_err();
     assert_eq!(e.to_string(), 
-        "Not all checks passed. Salt grains were too big for the salt shaker. \
-        Could not find the wrench.");
+        "Not all checks passed. Error 1. Error 3.");
+
+    let e = running_return_errors_with_all_errrors().unwrap_err();
+    assert_eq!(e.to_string(), 
+        "Not all checks passed. Error 1. Error 2. Error 3.");
+
+    let mut string = String::new();
+    running_return_errors_with_no_errrors(&mut string).unwrap();
+    assert_eq!(string, "Ok 1. Ok 2. Ok 3.");
+}
+
+fn running_return_errors_with_errrors_as_fraction() -> ResultBtAny<()> {
+    let result_1 = Err::<u32, _>("Error 1.");
+    let result_2 = Ok::<u32, &'static str>(67);
+    let result_3 = Err::<u32, _>("Error 3.");
+    return_errors!("Not all checks passed.", result_1, result_2, result_3);
+    Ok(())
+}
+
+fn running_return_errors_with_all_errrors() -> ResultBtAny<()> {
+    let result_1 = Err::<u32, _>("Error 1.");
+    let result_2 = Err::<u32, _>("Error 2.");
+    let result_3 = Err::<u32, _>("Error 3.");
+    return_errors!("Not all checks passed.", result_1, result_2, result_3);
+    Ok(())
+}
+
+fn running_return_errors_with_no_errrors(string: &mut String) -> ResultBtAny<()> {
+    let result_1 = Ok::<_, WithBacktrace<AnyError>>("Ok 1.");
+    let result_2 = Ok::<_, WithBacktrace<AnyError>>("Ok 2.");
+    let result_3 = Ok::<_, WithBacktrace<AnyError>>("Ok 3.");
+    return_errors!("Not all checks passed.", result_1, result_2, result_3);
+    string.push_str(result_1);
+    string.push_str(" ");
+    string.push_str(result_2);
+    string.push_str(" ");
+    string.push_str(result_3);
+    Ok(())
 }

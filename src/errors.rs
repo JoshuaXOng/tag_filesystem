@@ -40,46 +40,26 @@ pub fn collect_errors<T, E: Display>(errors: impl Iterator<Item = ResultBt<T, E>
 }
 
 #[macro_export]
-macro_rules! coalesce {
+macro_rules! return_errors {
     (helper $message: expr, $error: ident) => {
-        if let Err(e) = $error { format!("{} {}", $message, e.to_string()) }
-        else { $message.to_string() }
+        if let Err(e) = $error { ($message, e.to_string()) }
+        else { ($message, String::new()) }
     };
     (helper $message: expr, $error: ident, $($errors: ident), +) => {
         if let Err(e) = $error { 
-            let running = coalesce!(helper $message, $($errors), +);
-            format!("{} {}", running, e.to_string())
+            let (message, coalesced) = return_errors!(helper $message, $($errors), +);
+            (message, format!("{} {}", e.to_string(), coalesced))
         } else {
-            coalesce!(helper $message, $($errors), +)
-        }
-    };
-    ($message: expr, $($errors: ident), +) => {
-        match ($($errors), +) {
-            ($(Ok($errors)), +) => Ok(($($errors), +)),
-            ($($errors), +) => Err(coalesce!(helper $message, $($errors), +))
-        }
-    }
-}
-
-// TODO/WIP: Choose
-#[macro_export]
-macro_rules! coalescerr {
-    (helper $message: expr, $error: ident) => {
-        if let Err(e) = $error { format!("{} {}", $message, e.to_string()) }
-        else { $message.to_string() }
-    };
-    (helper $message: expr, $error: ident, $($errors: ident), +) => {
-        if let Err(e) = $error { 
-            let running = coalescerr!(helper $message, $($errors), +);
-            format!("{} {}", running, e.to_string())
-        } else {
-            coalescerr!(helper $message, $($errors), +)
+            return_errors!(helper $message, $($errors), +)
         }
     };
     ($message: expr, $($errors: ident), +) => {
         let ($($errors), +) = match ($($errors), +) {
             ($(Ok($errors)), +) => (($($errors), +)),
-            ($($errors), +) => Err(coalescerr!(helper $message, $($errors), +))?
+            ($($errors), +) => {
+                let (message, coalesced) = return_errors!(helper $message, $($errors), +);
+                Err(format!("{message} {coalesced}"))?
+            }
         };
     }
 }

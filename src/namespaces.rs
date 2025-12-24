@@ -11,7 +11,9 @@ use crate::{errors::ResultBtAny, inodes::{NamespaceInode, TagInodes},
 pub struct TfsNamespace {
     pub name: String,
     pub inode: NamespaceInode,
-    pub tags: TagInodes
+    pub tags: TagInodes,
+    pub owner: u32,
+    pub group: u32,
 }
 
 impl<'a> From<&'a TfsNamespace> for &'a TagInodes {
@@ -81,7 +83,7 @@ impl IndexedNamepsaces {
         NamespaceInode::try_from_free_inodes(inodes_inuse)
     }
 
-    pub fn add(&mut self, to_add: TfsNamespace) -> ResultBtAny<NamespaceInode> {
+    pub fn add(&mut self, to_add: TfsNamespace) -> ResultBtAny<&TfsNamespace> {
         let namespace_inode = to_add.inode;
 
         let does_conflict = self.namespaces.get(&namespace_inode).is_some();
@@ -90,7 +92,8 @@ impl IndexedNamepsaces {
         }
         
         self.namespaces.insert(namespace_inode, to_add);
-        Ok(namespace_inode)
+        Ok(self.namespaces.get(&namespace_inode)
+            .expect("To have just inserted with inode prior."))
     }
 
     pub fn do_for_all<'a, T>(&'a mut self,

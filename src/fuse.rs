@@ -53,6 +53,7 @@ fn get_is_a_namespace(value: &str) -> bool {
 // - Errors need to be displayed to the user not just logged.
 // - What does TTL, generation, fh, flags do?
 // - Make some of the FUSE ops atomic
+// - Get rid of `map_err`, make `map_err_inner`.
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
     fn create(&mut self, request: &Request<'_>, parent_inode: u64,
@@ -422,15 +423,12 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
                 name `{tag_name}`.")))?;
         }
 
-        let new_tag = self.add_tag(TfsTag::builder()
-            .name(tag_name)
-            .inode(self.get_free_tag_inode()
-                .map_err_inner(|e| ErrorReply::new(
-                    EINVAL, format!("No free tag inode. {}", e.to_string())))?)
-            .owner(request.uid())
-            .group(request.gid())
+        let new_tag = self.add_tag()
+            .tag_name(tag_name)
+            .owner_id(request.uid())
+            .group_id(request.gid())
             .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16))
-            .build())
+            .call()
             .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
         let tag_inode = new_tag.inode;
         let fuser_attributes = self.get_tag_fuser(&tag_inode)
@@ -442,7 +440,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         })
     }
 
-    fn lookup_inner(&mut self, _: &Request, parent_inode: u64,
+    fn lookup_inner(&mut self, request: &Request, parent_inode: u64,
         predicate: &OsStr) -> ResultBt<LookupReply, ErrorReply>
     {
         // TODO: Is there not just a method that returns String instead of Cow?
@@ -450,9 +448,14 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
 
         if get_is_inode_root(parent_inode) {
             if get_is_a_namespace(&predicate) {
-                let namespace_inode = self.insert_namespace(predicate)
+                let namespace_inode = self.add_namespace_with_name()
+                    .namespace_string(predicate)
+                    .owner_id(request.uid())
+                    .group_id(request.gid())
+                    .call()
                     .map_err_inner(|e| ErrorReply::new(ENOENT,
-                        format!("Namespace lookup failed. {}", e.to_string())))?;
+                        format!("Namespace lookup failed. {}", e.to_string())))?
+                    .inode;
                 return Ok(LookupReply {
                     ttl: NO_TTL,
                     attr: namespaces::get_fuse_attributes(&namespace_inode),
