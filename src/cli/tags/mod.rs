@@ -23,6 +23,7 @@ impl TagsParameters {
     }
 }
 
+// TODO: Add `mvf` command and allow `.` for relative.
 #[derive(Subcommand, Debug)]
 pub enum TagsSubcommand {
     Change(ChangeParameters),

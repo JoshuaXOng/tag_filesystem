@@ -7,8 +7,6 @@ use rand::random_range;
 use crate::{errors::{AnyError, ResultBtAny}, unwrap_or,
     wrappers::write_btreeset, WithBacktrace};
 
-// TODO: Add numbers to tabs in VIM.
-
 const CUSTOM_INODE_START: u64 = FUSE_ROOT_ID + 1;
 
 const INODE_TYPE_COUNT: u64 = 3;
@@ -33,7 +31,7 @@ fn generate_jumpoff_inode() -> u64 {
     random_range(unscaled_start..=unscaled_end) * INODE_TYPE_COUNT
 }
 
-// TODO: Maybe put timer on this and return no free inode.
+// TODO: Put timer and error out on expiry.
 fn generate_free_inode_<'a, T, R>(
     mut inodes_inuse: impl Itertools<Item = &'a T>,
     type_remainder: u64) -> ResultBtAny<R>

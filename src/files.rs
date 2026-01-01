@@ -448,32 +448,33 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
 }
 
 // TODO: Create macro to do something like the below.
-//impl<'a> FileUpdate<'a> {
-    // Want to only private a small subset of a nested struct's public fields?
-    // Can't selectively private a subset of a nested struct's fields.
-    // So, make it less effort to declare the fields that should be made
-    // public.
-    //
-    // Where `file` would be a field on the struct that is to be projected.
-    // ```project!(file, { 
-    //     name[RO]: String[str],
-    //     inode[RO]: FileInode,
-    //     tags[RO]: TagInodes,
-    //     something: String[str],
-    //     something_2: String[str],
-    // })```
-    // will generate something like the below
-    // ```
-    // fn get_name(&self) -> &str { ... }
-    // fn get_inode(&self) -> &FileInode { ... }
-    // fn get_tags(&self) -> &TagInodes { ... }
-    // fn get_something(&self) -> &str { &self.file.something }
-    // fn get_something_mut(&mut self) -> &mut str { &mut self.file.something }
-    // fn set_something(&mut self, something: String) { self.file.something = something; }
-    // fn get_something_2(&self) -> &str { &self.file.something_2 }
-    // fn get_something_2_mut(&mut self) -> &mut str { &mut self.file.something_2 }
-    // fn set_something_2(&mut self, something_2: String) { self.file.something_2 = something_2; }
-    // ```
-    //
-    // If any functions, just use `delegate` crate instead.
-//}
+//
+// Want to only private a small subset of a nested struct's public fields?
+// Can't selectively private a subset of a nested struct's fields.
+// So, make it less effort to declare the fields that should be made
+// public.
+// 
+// Where `file` would be a field on the struct that is to be projected.
+// ```impl<'a> FileUpdate<'a> {
+//     project!(file, { 
+//         name[RO]: String[str],
+//         inode[RO]: FileInode,
+//         tags[RO]: TagInodes,
+//         something: String[str],
+//         something_2: String[str],
+//     })
+// }```
+// will generate something like the below
+// ```impl<'a> FileUpdate<'a> {
+//     fn get_name(&self) -> &str { ... }
+//     fn get_inode(&self) -> &FileInode { ... }
+//     fn get_tags(&self) -> &TagInodes { ... }
+//     fn get_something(&self) -> &str { &self.file.something }
+//     fn get_something_mut(&mut self) -> &mut str { &mut self.file.something }
+//     fn set_something(&mut self, something: String) { self.file.something = something; }
+//     fn get_something_2(&self) -> &str { &self.file.something_2 }
+//     fn get_something_2_mut(&mut self) -> &mut str { &mut self.file.something_2 }
+//     fn set_something_2(&mut self, something_2: String) { self.file.something_2 = something_2; }
+// }```
+// 
+// If any functions, just use `delegate` crate instead.

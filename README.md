@@ -12,6 +12,10 @@ For the most part, filesystem interactions re-use the typical CLI binaries (e.g.
 # Examples
 
 ```bash
+# Installing the filesystem and setting-up helpers.
+cargo install tag_filesystem
+tfs tags setup
+
 # Run in background, or run as a systemd service.
 username@hostname:~/mnt$ nohup tfs iwanttags &
 username@hostname:~/mnt$ cd iwanttags
@@ -46,17 +50,15 @@ file_2
 username@hostname:~/mnt/iwanttags$ cd "{ tag_1 }"
 username@hostname:~/mnt/iwanttags/{ tag_1 }$
 
-username@hostname:~/mnt/iwanttags/{ tag_1 }$ mv "{ ., tag_2 }"/file_2 .
+username@hostname:~/mnt/iwanttags/{ tag_1 }$ mvf "{ ., tag_2 }"/file_2 .
 username@hostname:~/mnt/iwanttags{ tag_1 }$ ls
 file_1
 file_2
 
 # Contrived for the example (i.e., could have just done `cd {}`).
-username@hostname:~/mnt/iwanttags{ tag_1 }$ cd "{ ., !tag_1 }"
+username@hostname:~/mnt/iwanttags{ tag_1 }$ ct ~tag_1
 username@hostname:~/mnt/iwanttags$
 ```
-
-TODO: Update on `ct`
 
 # Contributing / Todo
 
@@ -66,16 +68,14 @@ Feel free to raise PRs to the repo.
 
 Have scattered `TODO` comments around the codebase.
 
-Storing queries (these things `{ ... }` that allow searching by tags) is a bit sketchy at the moment.
-
 More broadly, want to eventually implement correct behaviour for core FUSE functions. And,
 eventually get off of FUSE.
 
-Tab completion. Pressing tab should show unique tags that are used with the current tags.
-
 # Building
 
-TODO: Need capnproto?
+Pre-requisite, install the `capnp` binary, [steps here](https://capnproto.org/install.html).
+
+Then, normal `cargo` commands from then on out.
 
 # License
 

@@ -85,5 +85,3 @@ macro_rules! unwrap_or {
         }
     };
 }
-
-// TODO: create f! macro

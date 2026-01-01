@@ -12,7 +12,7 @@ use tracing::{info, instrument, warn};
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
 use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny},
     files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes},
-    journal::TfsJournal, namespaces::{self, IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE,
+    journal::TfsJournal, namespaces::{IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE,
     NO_RDEV}, path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
     new_root_fuser, serialize_tag_filesystem, PersistedTfs}, snapshots::{PersistentSnapshots,
     TfsSnapshots}, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
@@ -104,6 +104,9 @@ impl TagFilesystem {
     }
 }
 
+// TODO(s):
+// - Make `rename_tag` and `delete_tag` atomic.
+// - Correct `blocks`, `nlink` and `flags` values for `to_fuser`.
 #[bon]
 impl<Storage, Snapshots> TagFilesystem<Storage, Snapshots>
 where Storage: TfsStorage, Snapshots: TfsSnapshots {
@@ -253,7 +256,6 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     #[builder]
     fn to_fuser(tfs_entry: &dyn TfsEntry, file_size: Option<u64>) -> FileAttr {
         let file_size = file_size.unwrap_or(0);
-        // TODO: What to do with `blocks`, `nlink` and `flags`.
         FileAttr {
             ino: tfs_entry.get_inode_id(),
             size: file_size,
@@ -491,7 +493,6 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
-    // TODO: Make atomic, along with `delete_tag`.
     pub fn rename_tag(&mut self, old_name: &str, new_name: String) -> ResultBtAny<()> {
         let tag_inode = self.tags.get_by_name(old_name)
             .ok_or(format!("Tag `{old_name}` does not exist"))?

@@ -14,6 +14,9 @@ pub struct ChangeParameters {
 }
 
 impl ChangeParameters {
+    // TODO: More user friendly error messages.
+    // E.g., sometimes the below error for `ct tag_2` when `tag2` does exist.
+    // `Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }`
     pub fn run(&self) -> ResultBtAny<()> {
         println!("{}", get_changed_path(&self)?.to_string_lossy());
         Ok(())

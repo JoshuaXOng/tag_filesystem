@@ -2,14 +2,14 @@ use std::{ffi::OsStr, fmt::Display, thread::sleep, time::{Duration, SystemTime}}
 
 use bon::Builder;
 use derive_more::Error;
-use fuser::{FileAttr, FileType, Filesystem, KernelConfig, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request, TimeOrNow, FUSE_ROOT_ID};
+use fuser::{FileAttr, Filesystem, ReplyAttr, ReplyCreate, ReplyData,
+    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request, TimeOrNow};
 use libc::{c_int, EINVAL, ENOENT};
 use tracing::{debug, error, info, instrument, trace, warn, Level};
 
-use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, files::TfsFile,
-    filesystem::TagFilesystem, inodes::{get_is_inode_root, FileInode, NamespaceInode, TagInode,
-    TagInodes}, namespaces, os::{COMMON_BLOCK_SIZE, NO_RDEV, ROOT_GID, ROOT_UID},
-    storage::TfsStorage, tags::{TfsTag, DEFAULT_TAG_PERMISSIONS}, ttl::{ANY_TTL, NO_TTL},
+use crate::{entries::TfsEntry, errors::{ResultBt, StringExt}, filesystem::TagFilesystem,
+    inodes::{get_is_inode_root, FileInode, NamespaceInode, TagInode, TagInodes},
+    storage::TfsStorage, tags::DEFAULT_TAG_PERMISSIONS, ttl::{ANY_TTL, NO_TTL},
     ResultExt, ResultExt2};
 
 macro_rules! event_ {
@@ -42,19 +42,21 @@ fn get_is_a_namespace(value: &str) -> bool {
 }
 
 // TODO(S):
-// - Some `reply.error` should not really log as an error.
-// - Sometimes the below error for `ct tag_2` when `tag2` does exist.
-//   `Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }`
-// - Should have two (or infinite) depth query sets? 
-//   Cause like `{ tag_1, tag_2 }/file_1`, want to add `tag_3`, how to do with good ux?
-//   cwd at `{ tag_1, tag_2 }`, `mv file_1 ./{ tag_3 }`,
-//   and want to remove a tag, `mv file_1 ./{ ~tag_2 }`
-// - Check they reply errors are the most suitable ones.
+// - Some `reply.error`s should not really be logged as an error.
+// - Check error codes in replies are the most suitable ones.
 // - Errors need to be displayed to the user not just logged.
-// - What does TTL, generation, fh, flags do?
-// - Make some of the FUSE ops atomic
+// - Determine affect of `ttl`, `generation`, `fh`, and `flags`. 
+// - Make some of the FUSE ops atomic.
 // - Get rid of `map_err`, make `map_err_inner`.
 // - Update `when_accessed`, etc. values.
+// - Neither file or tag have name priority. Need to update
+//   `mkdir_inner` and `create_inner` to check name is not taken.
+//   Implementation of `lookup_inner` is dependent.
+// - Add authorization based on tags within namespace for `lookup_inner`.
+//   Deny over allow. From which namespace needs to get permissions assigned.
+// - Consider allowing `mkdir` everywhere (not just root), but just always
+//   create at root.
+// - Implement steps for files and tags inheriting perms (e.g., `setgid`).
 impl<Storage: TfsStorage> Filesystem for TagFilesystem<Storage> {
     #[instrument(skip_all, fields(?parent_inode, ?file_name))]
     fn create(&mut self, request: &Request<'_>, parent_inode: u64,
@@ -345,10 +347,13 @@ struct SetattrReply {
     message: &'static str
 }
 
+// TODO(s):
+// - Implement `setattr_inner`.
+// - Implement rest of `fsyncdir_inner`.
+// - Determine impact of `NO_TTL`.
+// - Use rest of args, or at least understand them (e.g., `flags`).
+// - Remove `_` prefixes if used of args.
 impl<Storage: TfsStorage> TagFilesystem<Storage> {
-    // TODO(s):
-    // - Use rest of args, or at least understand them.
-    // - Remove _ prefix if used
     fn create_inner(&mut self, request: &Request<'_>, parent_inode: u64,
         file_name: &OsStr, _mode: u32, umask: u32, _flags: i32)
         -> ResultBt<CreateReply, ErrorReply>
@@ -365,7 +370,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
                 .permissions(DEFAULT_TAG_PERMISSIONS & !(umask as u16))
                 .call()
                 .map_err_inner(|e| ErrorReply::new(EINVAL, e.to_string()))?;
-            // TODO: I swear this should not be needed : \
             let file_inode = new_file.inode;
             let fuser_attributes = self.get_file_fuser(&file_inode)
                 .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
@@ -397,7 +401,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
         let file_inode = new_file.inode;
         let fuser_attributes = self.get_file_fuser(&file_inode)
-            // TODO: More appropriate error code.
             .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
         Ok(CreateReply {
             ttl: ANY_TTL,
@@ -408,14 +411,12 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
         })
     }
 
-    // TODO: Figure out eval steps. for files and tags inheriting perms (setgid).
     fn mkdir_inner(&mut self, request: &Request<'_>, parent_inode: u64,
         tag_name: &OsStr, _mode: u32, umask: u32)
         -> ResultBt<MkdirReply, ErrorReply>
     {
         let tag_name = tag_name.to_string_lossy();
 
-        // TODO: Maybe allow mkdir everywhere, just always create at global.
         if !get_is_inode_root(parent_inode) {
             Err(ErrorReply::new(ENOENT, "Needs to be under the root directory."))?;
         }
@@ -448,13 +449,10 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
     fn lookup_inner(&mut self, request: &Request, parent_inode: u64,
         predicate: &OsStr) -> ResultBt<LookupReply, ErrorReply>
     {
-        // TODO: Is there not just a method that returns String instead of Cow?
         let predicate = predicate.to_string_lossy().to_string();
 
         if get_is_inode_root(parent_inode) {
             if get_is_a_namespace(&predicate) {
-                // TODO: Add Authorization based on tags within namespace.
-                // Deny over allow. Namespace needs to get permissions assigned.
                 let namespace_inode = self.add_namespace_with_name()
                     .namespace_string(predicate)
                     .owner_id(request.uid())
@@ -472,7 +470,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
                 });
             }
 
-            // TODO: Can this be put in function to have single source of truth?
             let target_inode = self.get_tags()
                 .get_by_name(&predicate)
                 .map(|tag| tag.inode.get_id())
@@ -485,7 +482,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
 
             let fuser_attributes = self.get_fuser_attributes(target_inode)
                 .map_err_inner(|e| ErrorReply::new(ENOENT, e.to_string()))?;
-            // TODO: See if setting query to None after this is appropriate.
             return Ok(LookupReply {
                 ttl: ANY_TTL,
                 attr: fuser_attributes,
@@ -494,10 +490,7 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             });
         }
 
-        // TODO: Need to add checks as to what file and tag names can be created
-        // to make them not conflict, no dupes when ls'ing
         if let Ok(parent_namespace) = self.get_namespaces().get_by_inode_id(parent_inode) {
-            // TODO: Can this be put in function with twin-ish
             let fuser = self.get_inrange_tags(parent_namespace)
                 .and_then(|tags| tags.into_iter()
                     .find(|tag| tag.name == predicate)
@@ -509,7 +502,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
                 .map_err_inner(|e| ErrorReply::new(ENOENT, format!("Tag/file \
                     lookup failed, `{predicate}` is not a tag not a file under \
                     inode `{parent_inode}`. {}", e.to_string())))?;
-            // TODO: no magic variables.
             return Ok(LookupReply {
                 ttl: NO_TTL,
                 attr: fuser,
@@ -525,8 +517,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
     fn getattr_inner(&mut self, _request: &Request<'_>, inode_id: u64,
         _file_handle: Option<u64>) -> ResultBt<GetattrReply, ErrorReply>
     {
-        // TODO: See impact of NO_TTL
-        // TODO: Use get_is_inode_root
         if get_is_inode_root(inode_id) {
             return Ok(GetattrReply {
                 ttl: NO_TTL,
@@ -667,7 +657,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             return Ok("Saved all.");
         }
 
-        // TODO
         Err(ErrorReply::new(EINVAL, "Not implemented yet."))?
     }
 
@@ -739,7 +728,6 @@ impl<Storage: TfsStorage> TagFilesystem<Storage> {
             .map_err_inner(|e| ErrorReply::new(
                 ENOENT, format!("Inode does not match anything. {e}")))?;
 
-        // TODO
         Ok(SetattrReply {
             ttl: ANY_TTL,
             attr: fuser_attributes,
