@@ -12,11 +12,9 @@ pub fn with_tfs_mount(to_do: impl FnOnce(&PathBuf) -> ResultBtAny<()>) -> Result
     let expectation = "Test setup code should work."; 
     let setup_payload = fuse_setup()
         .expect(expectation);
-    let test_result = to_do(&setup_payload.0); 
+    to_do(&setup_payload.0)?; 
     fuse_cleanup(setup_payload)
         .expect(expectation);
-    test_result
-        .unwrap();
     Ok(())
 }
 

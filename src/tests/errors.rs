@@ -35,9 +35,8 @@ fn executing_unwrap_or_on_option() {
     assert!(did_execute);
 }
 
-// TODO: You can return `Result` from tests now? Convert.
 #[test]
-fn running_return_errors() {
+fn running_return_errors() -> ResultBtAny<()> {
     let e = running_return_errors_with_errrors_as_fraction().unwrap_err();
     assert_eq!(e.to_string(), 
         "Not all checks passed. Error 1. Error 3.");
@@ -47,8 +46,10 @@ fn running_return_errors() {
         "Not all checks passed. Error 1. Error 2. Error 3.");
 
     let mut string = String::new();
-    running_return_errors_with_no_errrors(&mut string).unwrap();
+    running_return_errors_with_no_errrors(&mut string)?;
     assert_eq!(string, "Ok 1. Ok 2. Ok 3.");
+
+    Ok(())
 }
 
 fn running_return_errors_with_errrors_as_fraction() -> ResultBtAny<()> {

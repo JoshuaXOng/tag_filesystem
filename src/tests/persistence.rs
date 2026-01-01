@@ -1,10 +1,11 @@
 use std::io::Cursor;
 
-use crate::{files::TfsFile, filesystem::new_root_fuser_, persistence::{deserialize_tag_filesystem,
-    serialize_tag_filesystem, PersistedTfs}, tags::TfsTag};
+use crate::{errors::ResultBtAny, files::TfsFile, filesystem::new_root_fuser_,
+    persistence::{deserialize_tag_filesystem, serialize_tag_filesystem, PersistedTfs},
+    tags::TfsTag};
 
 #[test]
-fn running_tag_filesystem_serdeialization() {
+fn running_tag_filesystem_serdeialization() -> ResultBtAny<()> {
     let mut persistence_location = vec![];
     let root_fuser = new_root_fuser_();
     serialize_tag_filesystem(
@@ -13,13 +14,13 @@ fn running_tag_filesystem_serdeialization() {
         vec![
             &TfsFile::builder()
                 .name(String::from("test_file_a"))
-                .inode(3.try_into().unwrap())
+                .inode(3.try_into()?)
                 .owner(1000)
                 .group(1000)
                 .build(),
             &TfsFile::builder()
                 .name(String::from("test_file_b"))
-                .inode(6.try_into().unwrap())
+                .inode(6.try_into()?)
                 .owner(1000)
                 .group(1000)
                 .build()
@@ -27,25 +28,25 @@ fn running_tag_filesystem_serdeialization() {
         vec![
             &TfsTag::builder()
                 .name(String::from("test_tag_a"))
-                .inode(4.try_into().unwrap())
+                .inode(4.try_into()?)
                 .owner(1000)
                 .group(1000)
                 .build(),
             &TfsTag::builder()
                 .name(String::from("test_tag_b"))
-                .inode(7.try_into().unwrap())
+                .inode(7.try_into()?)
                 .owner(1000)
                 .group(1000)
                 .build(),
             &TfsTag::builder()
                 .name(String::from("test_tag_c"))
-                .inode(10.try_into().unwrap())
+                .inode(10.try_into()?)
                 .owner(1000)
                 .group(1000)
                 .build()
         ]);
     let PersistedTfs { root: _root_fuser, files: recovered_files, tags: recovered_tags }
-        = deserialize_tag_filesystem(Cursor::new(persistence_location)).unwrap();
+        = deserialize_tag_filesystem(Cursor::new(persistence_location))?;
     assert_eq!(root_fuser, _root_fuser);
     let (rf, rt) = (recovered_files, recovered_tags);
 
@@ -62,4 +63,6 @@ fn running_tag_filesystem_serdeialization() {
     assert_eq!(rt[1].inode.get_id(), 7);
     assert_eq!(rt[2].name, "test_tag_c");
     assert_eq!(rt[2].inode.get_id(), 10);
+
+    Ok(())
 }

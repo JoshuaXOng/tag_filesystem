@@ -10,7 +10,7 @@ use crate::{errors::ResultBtAny, tests::{fixtures::with_tfs_mount, tracing::setu
     wrappers::VecWrapper};
 
 #[test]
-fn listing_files_and_tags() {
+fn listing_files_and_tags() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -66,11 +66,13 @@ fn listing_files_and_tags() {
         assert_eq!(output, "");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn listing_namespace_to_show_neighbour_tags() {
+fn listing_namespace_to_show_neighbour_tags() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -93,11 +95,13 @@ fn listing_namespace_to_show_neighbour_tags() {
         assert_eq!(output, "file_1\ntag_1\ntag_2\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn creating_files() {
+fn creating_files() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -113,11 +117,13 @@ fn creating_files() {
         assert_eq!(output, "file_1\nfile_2\nfile_3\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn creating_duplicate_files() {
+fn creating_duplicate_files() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -136,11 +142,13 @@ fn creating_duplicate_files() {
         assert_eq!(output, "file_1\nfile_2\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn creating_tags() {
+fn creating_tags() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -156,11 +164,13 @@ fn creating_tags() {
         assert_eq!(output, "tag_1\ntag_2\ntag_3\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn creating_duplicate_tags() {
+fn creating_duplicate_tags() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -179,11 +189,13 @@ fn creating_duplicate_tags() {
         assert_eq!(output, "tag_1\ntag_2\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn writing_and_reading_to_files() {
+fn writing_and_reading_to_files() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -205,11 +217,13 @@ fn writing_and_reading_to_files() {
         assert_eq!(output, "abcdefghij\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn removing_file() {
+fn removing_file() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -228,11 +242,13 @@ fn removing_file() {
         assert_eq!(output, "file_1\nfile_3\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn removing_nonexistent_file() {
+fn removing_nonexistent_file() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -251,11 +267,13 @@ fn removing_nonexistent_file() {
         assert_eq!(output, "file_1\nfile_2\nfile_3\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn removing_tags() {
+fn removing_tags() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -274,11 +292,13 @@ fn removing_tags() {
         assert_eq!(output, "tag_1\ntag_3\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn removing_nonexistent_tag() {
+fn removing_nonexistent_tag() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -297,11 +317,13 @@ fn removing_nonexistent_tag() {
         assert_eq!(output, "tag_1\ntag_2\ntag_3\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 #[test]
-fn doing_random_chained_interactions() {
+fn doing_random_chained_interactions() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
@@ -430,7 +452,9 @@ fn doing_random_chained_interactions() {
         assert_eq!(output, "file_1\ntag_3\ntag_44\ntag_5\n");
 
         Ok(())
-    }).unwrap();
+    })?;
+
+    Ok(())
 }
 
 trait CommandExt {

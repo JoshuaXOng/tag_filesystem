@@ -5,7 +5,7 @@ use clap::Parser;
 use tempfile::tempdir;
 
 use crate::{cli::{mount::systemd::{ServiceTemplate, SystemdParamereters},
-    tags::change::{ChangeParameters, ChangeTag}}, path::PathBufExt, tests::tracing::setup_tracing};
+    tags::change::{ChangeParameters, ChangeTag}}, errors::ResultBtAny, path::PathBufExt, tests::tracing::setup_tracing};
 
 #[test]
 fn parsing_changing_tags() {
@@ -67,15 +67,13 @@ fn parsing_changing_tags() {
 }
 
 #[test]
-fn systemd_unit_file_rendering() {
+fn systemd_unit_file_rendering() -> ResultBtAny<()> {
     setup_tracing();
 
-    let temporary_directory = tempdir().unwrap();
+    let temporary_directory = tempdir()?;
     let mount_path = temporary_directory.path().to_path_buf();
-    let service_configuration = ServiceTemplate::try_new(&mount_path)
-        .unwrap()
-        .render()
-        .unwrap();
+    let service_configuration = ServiceTemplate::try_new(&mount_path)?
+        .render()?;
     assert_eq!(service_configuration, 
         format!(indoc::indoc!(
             "[Unit]
@@ -91,10 +89,11 @@ fn systemd_unit_file_rendering() {
             DeviceAllow=/dev/fuse rw
             [Install]
             WantedBy=multi-user.target"), 
-            to_binary=canonicalize(current_exe().unwrap())
-                .unwrap()
+            to_binary=canonicalize(current_exe()?)?
                 .display()
                 .to_string(),
             mount_path=mount_path.display()
                 .to_string()));
+
+    Ok(())
 }
