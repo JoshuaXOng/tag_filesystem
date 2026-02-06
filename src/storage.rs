@@ -1,25 +1,39 @@
-use std::{fs::{self, create_dir_all, remove_file, File, OpenOptions}, io::{Read, Seek, SeekFrom,
-    Write}, path::PathBuf, time::SystemTime};
+use std::{
+    fs::{self, File, OpenOptions, create_dir_all, remove_file},
+    io::{Read, Seek, SeekFrom, Write},
+    path::PathBuf,
+    time::SystemTime,
+};
 
 use tracing::{info, instrument, warn};
 
-use crate::{errors::ResultBtAny, inodes::FileInode, path::get_configuration_directory, wrappers::PathExt};
+use crate::{
+    errors::ResultBtAny, inodes::FileInode, path::get_configuration_directory, wrappers::PathExt,
+};
 
 pub trait TfsStorage {
     fn get_file_size(&self, file_inode: &FileInode) -> ResultBtAny<u64>;
     fn get_last_accessed(&self, file_inode: &FileInode) -> ResultBtAny<SystemTime>;
     fn get_last_modified(&self, file_inode: &FileInode) -> ResultBtAny<SystemTime>;
     fn get_when_created(&self, file_inode: &FileInode) -> ResultBtAny<SystemTime>;
-    fn read(&self, file_inode: &FileInode, start_position: u64,
-        read_amount: usize) -> ResultBtAny<Vec<u8>>;
-    fn write(&mut self, file_inode: &FileInode, start_position: u64,
-        to_write: &[u8]) -> ResultBtAny<()>;
+    fn read(
+        &self,
+        file_inode: &FileInode,
+        start_position: u64,
+        read_amount: usize,
+    ) -> ResultBtAny<Vec<u8>>;
+    fn write(
+        &mut self,
+        file_inode: &FileInode,
+        start_position: u64,
+        to_write: &[u8],
+    ) -> ResultBtAny<()>;
     fn delete(&self, file_inode: &FileInode) -> ResultBtAny<()>;
 }
 
 #[derive(Debug)]
 pub struct DelegateStorage {
-    root: PathBuf
+    root: PathBuf,
 }
 
 impl DelegateStorage {
@@ -31,17 +45,27 @@ impl DelegateStorage {
         let does_exist = delegate_directory.try_exists()?;
         if does_exist && !delegate_directory.is_dir() {
             if !delegate_directory.is_dir() {
-                return Err(format!("Delgate storage root needs a dir not \
-                    a file `{}`.", delegate_directory.to_string_lossy()).into());
+                return Err(format!(
+                    "Delgate storage root needs a dir not \
+                    a file `{}`.",
+                    delegate_directory.to_string_lossy()
+                )
+                .into());
             }
-            warn!("Delegate storage already exists at `{}`, re-using it.",
-                delegate_directory.to_string_lossy());
+            warn!(
+                "Delegate storage already exists at `{}`, re-using it.",
+                delegate_directory.to_string_lossy()
+            );
         } else if !does_exist {
             create_dir_all(&delegate_directory)?;
-            info!("Creating directories on the way to `{}`.",
-                delegate_directory.to_string_lossy());
+            info!(
+                "Creating directories on the way to `{}`.",
+                delegate_directory.to_string_lossy()
+            );
         }
-        Ok(Self { root: delegate_directory })
+        Ok(Self {
+            root: delegate_directory,
+        })
     }
 
     fn get_location_prefix() -> PathBuf {
@@ -55,7 +79,7 @@ impl DelegateStorage {
     }
 
     fn get_delegate_path(&self, file_inode: &FileInode) -> PathBuf {
-        let mut delegate_path = self.root.clone(); 
+        let mut delegate_path = self.root.clone();
         delegate_path.push(file_inode.get_id().to_string());
         delegate_path
     }
@@ -63,27 +87,27 @@ impl DelegateStorage {
 
 impl TfsStorage for DelegateStorage {
     fn get_file_size(&self, file_inode: &FileInode) -> ResultBtAny<u64> {
-        Ok(fs::metadata(self.get_delegate_path(file_inode))?
-            .len())
+        Ok(fs::metadata(self.get_delegate_path(file_inode))?.len())
     }
 
     fn get_last_accessed(&self, file_inode: &FileInode) -> ResultBtAny<SystemTime> {
-        Ok(fs::metadata(self.get_delegate_path(file_inode))?
-            .accessed()?)
+        Ok(fs::metadata(self.get_delegate_path(file_inode))?.accessed()?)
     }
 
     fn get_last_modified(&self, file_inode: &FileInode) -> ResultBtAny<SystemTime> {
-        Ok(fs::metadata(self.get_delegate_path(file_inode))?
-            .modified()?)
+        Ok(fs::metadata(self.get_delegate_path(file_inode))?.modified()?)
     }
 
     fn get_when_created(&self, file_inode: &FileInode) -> ResultBtAny<SystemTime> {
-        Ok(fs::metadata(self.get_delegate_path(file_inode))?
-            .created()?)
+        Ok(fs::metadata(self.get_delegate_path(file_inode))?.created()?)
     }
 
-    fn read(&self, file_inode: &FileInode, start_position: u64, read_amount: usize)
-    -> ResultBtAny<Vec<u8>> {
+    fn read(
+        &self,
+        file_inode: &FileInode,
+        start_position: u64,
+        read_amount: usize,
+    ) -> ResultBtAny<Vec<u8>> {
         let delegate_path = self.get_delegate_path(file_inode);
         let mut delegate_file = File::open(delegate_path)?;
         delegate_file.seek(SeekFrom::Start(start_position))?;
@@ -93,12 +117,16 @@ impl TfsStorage for DelegateStorage {
         Ok(file_contents)
     }
 
-    fn write(&mut self, file_inode: &FileInode, start_position: u64, to_write: &[u8])
-    -> ResultBtAny<()> {
+    fn write(
+        &mut self,
+        file_inode: &FileInode,
+        start_position: u64,
+        to_write: &[u8],
+    ) -> ResultBtAny<()> {
         let delegate_path = self.get_delegate_path(file_inode);
         let mut delegate_file = OpenOptions::new()
             .create(true)
-            .read(true) 
+            .read(true)
             .write(true)
             .open(&delegate_path)?;
         delegate_file.seek(SeekFrom::Start(start_position))?;
@@ -108,8 +136,7 @@ impl TfsStorage for DelegateStorage {
 
     fn delete(&self, file_inode: &FileInode) -> ResultBtAny<()> {
         let delegate_path = self.get_delegate_path(file_inode);
-        remove_file(delegate_path)
-            .map_err(Into::into)
+        remove_file(delegate_path).map_err(Into::into)
     }
 }
 
@@ -135,13 +162,21 @@ impl TfsStorage for StubStorage {
         Ok(SystemTime::UNIX_EPOCH)
     }
 
-    fn read(&self, _file_inode: &FileInode, _start_position: u64, _read_amount: usize)
-    -> ResultBtAny<Vec<u8>> {
+    fn read(
+        &self,
+        _file_inode: &FileInode,
+        _start_position: u64,
+        _read_amount: usize,
+    ) -> ResultBtAny<Vec<u8>> {
         Ok(vec![])
     }
 
-    fn write(&mut self, _file_inode: &FileInode, _start_position: u64, _to_write: &[u8])
-    -> ResultBtAny<()> {
+    fn write(
+        &mut self,
+        _file_inode: &FileInode,
+        _start_position: u64,
+        _to_write: &[u8],
+    ) -> ResultBtAny<()> {
         Ok(())
     }
 

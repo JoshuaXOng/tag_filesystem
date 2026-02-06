@@ -27,10 +27,11 @@ impl StringExt for String {
     }
 }
 
-pub fn collect_errors<T, E: Display>(errors: impl Iterator<Item = ResultBt<T, E>>)
-    -> ResultBtAny<()>
-{
-    let errors = errors.filter_map(Result::err)
+pub fn collect_errors<T, E: Display>(
+    errors: impl Iterator<Item = ResultBt<T, E>>,
+) -> ResultBtAny<()> {
+    let errors = errors
+        .filter_map(Result::err)
         .map(|e| e.to_string())
         .collect::<Vec<_>>();
     if !errors.is_empty() {
@@ -46,7 +47,7 @@ macro_rules! return_errors {
         else { ($message, String::new()) }
     };
     (helper $message: expr, $error: ident, $($errors: ident), +) => {
-        if let Err(e) = $error { 
+        if let Err(e) = $error {
             let (message, coalesced) = return_errors!(helper $message, $($errors), +);
             (message, format!("{} {}", e.to_string(), coalesced))
         } else {
@@ -68,20 +69,16 @@ pub type AnyError = Box<dyn Error + Send + Sync>;
 
 #[macro_export]
 macro_rules! unwrap_or {
-    ($to_unwrap: expr, $e: ident, $else_do: expr) => {
-        {
-            match $to_unwrap {
-                Ok(x) => x,
-                Err($e) => _ = $else_do
-            }
+    ($to_unwrap: expr, $e: ident, $else_do: expr) => {{
+        match $to_unwrap {
+            Ok(x) => x,
+            Err($e) => _ = $else_do,
         }
-    };
-    ($to_unwrap: expr, $else_do: expr) => {
-        {
-            match $to_unwrap {
-                Some(x) => x,
-                None => _ = $else_do
-            }
+    }};
+    ($to_unwrap: expr, $else_do: expr) => {{
+        match $to_unwrap {
+            Some(x) => x,
+            None => _ = $else_do,
         }
-    };
+    }};
 }

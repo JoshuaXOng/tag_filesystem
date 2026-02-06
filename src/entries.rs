@@ -20,8 +20,6 @@ pub trait TfsEntry {
 
 impl Display for dyn TfsEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(id={})",
-            self.get_name(),
-            self.get_inode_id())
+        write!(f, "{}(id={})", self.get_name(), self.get_inode_id())
     }
 }

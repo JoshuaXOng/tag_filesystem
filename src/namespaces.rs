@@ -3,8 +3,12 @@ use std::{collections::HashMap, fmt::Display, time::SystemTime};
 use bon::Builder;
 use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{NamespaceInode, TagInodes},
-    wrappers::write_iter};
+use crate::{
+    entries::TfsEntry,
+    errors::ResultBtAny,
+    inodes::{NamespaceInode, TagInodes},
+    wrappers::write_iter,
+};
 
 pub const DEFAULT_NAMESPACE_PERMISSIONS: u16 = 0o777;
 
@@ -25,7 +29,7 @@ pub struct TfsNamespace {
     #[builder(default = SystemTime::now())]
     pub when_changed: SystemTime,
     #[builder(default = SystemTime::now())]
-    pub when_created: SystemTime
+    pub when_created: SystemTime,
 }
 
 impl TfsEntry for TfsNamespace {
@@ -90,31 +94,39 @@ impl Display for TfsNamespace {
 
 #[derive(Debug)]
 pub struct IndexedNamepsaces {
-    namespaces: HashMap<NamespaceInode, TfsNamespace>
+    namespaces: HashMap<NamespaceInode, TfsNamespace>,
 }
 
 impl IndexedNamepsaces {
     pub fn new() -> Self {
         Self {
-            namespaces: HashMap::new()
+            namespaces: HashMap::new(),
         }
     }
 
     pub fn get_by_inode(&self, namespace_inode: &NamespaceInode) -> ResultBtAny<&TfsNamespace> {
-        self.namespaces.get(&namespace_inode)
+        self.namespaces
+            .get(&namespace_inode)
             .ok_or(Self::get_namespace_404_message(namespace_inode).into())
     }
 
     pub fn get_by_inode_id(&self, inode_id: u64) -> ResultBtAny<&TfsNamespace> {
         let namespace_inode = NamespaceInode::try_from(inode_id)?;
-        self.namespaces.get(&namespace_inode)
-            .ok_or(format!("Namespace with inode `{namespace_inode}` does not \
-                exist.").into())
+        self.namespaces.get(&namespace_inode).ok_or(
+            format!(
+                "Namespace with inode `{namespace_inode}` does not \
+                exist."
+            )
+            .into(),
+        )
     }
 
-    pub fn get_by_inode_mut(&mut self, namespace_inode: &NamespaceInode)
-    -> ResultBtAny<NamespaceUpdate<'_>> {
-        Ok(self.namespaces
+    pub fn get_by_inode_mut(
+        &mut self,
+        namespace_inode: &NamespaceInode,
+    ) -> ResultBtAny<NamespaceUpdate<'_>> {
+        Ok(self
+            .namespaces
             .get_mut(&namespace_inode)
             .ok_or(Self::get_namespace_404_message(namespace_inode))?
             .into())
@@ -128,8 +140,8 @@ impl IndexedNamepsaces {
         self.namespaces.values()
     }
 
-    pub fn get_map(&self) -> &HashMap<NamespaceInode, TfsNamespace> { 
-        &self.namespaces 
+    pub fn get_map(&self) -> &HashMap<NamespaceInode, TfsNamespace> {
+        &self.namespaces
     }
 
     pub fn get_free_inode(&self) -> ResultBtAny<NamespaceInode> {
@@ -142,19 +154,25 @@ impl IndexedNamepsaces {
 
         let does_conflict = self.namespaces.get(&namespace_inode).is_some();
         if does_conflict {
-            Err(format!("Namespace with id `{}` already exists.", namespace_inode))?;
+            Err(format!(
+                "Namespace with id `{}` already exists.",
+                namespace_inode
+            ))?;
         }
-        
+
         self.namespaces.insert(namespace_inode, to_add);
-        Ok(self.namespaces.get(&namespace_inode)
+        Ok(self
+            .namespaces
+            .get(&namespace_inode)
             .expect("To have just inserted with inode prior."))
     }
 
-    pub fn do_for_all<'a, T>(&'a mut self,
-        mut to_do: impl FnMut(NamespaceUpdate) -> T + 'a)
-        -> impl Iterator<Item = T> + 'a
-    {
-        self.namespaces.values_mut()
+    pub fn do_for_all<'a, T>(
+        &'a mut self,
+        mut to_do: impl FnMut(NamespaceUpdate) -> T + 'a,
+    ) -> impl Iterator<Item = T> + 'a {
+        self.namespaces
+            .values_mut()
             .map(move |namespace| to_do(namespace.into()))
     }
 }
@@ -168,7 +186,7 @@ impl Display for IndexedNamepsaces {
 pub struct NamespaceUpdate<'a> {
     pub name: &'a mut String,
     inode: &'a NamespaceInode,
-    pub tags: &'a mut TagInodes
+    pub tags: &'a mut TagInodes,
 }
 
 impl<'a> NamespaceUpdate<'a> {
@@ -182,7 +200,7 @@ impl<'a> From<&'a mut TfsNamespace> for NamespaceUpdate<'a> {
         NamespaceUpdate {
             name: &mut value.name,
             inode: &mut value.inode,
-            tags: &mut value.tags
+            tags: &mut value.tags,
         }
     }
 }

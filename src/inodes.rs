@@ -4,8 +4,12 @@ use fuser::FUSE_ROOT_ID;
 use itertools::Itertools;
 use rand::random_range;
 
-use crate::{errors::{AnyError, ResultBtAny}, unwrap_or,
-    wrappers::write_btreeset, WithBacktrace};
+use crate::{
+    WithBacktrace,
+    errors::{AnyError, ResultBtAny},
+    unwrap_or,
+    wrappers::write_btreeset,
+};
 
 const CUSTOM_INODE_START: u64 = FUSE_ROOT_ID + 1;
 
@@ -34,9 +38,11 @@ fn generate_jumpoff_inode() -> u64 {
 // TODO: Put timer and error out on expiry.
 fn generate_free_inode_<'a, T, R>(
     mut inodes_inuse: impl Itertools<Item = &'a T>,
-    type_remainder: u64) -> ResultBtAny<R>
-    where T: PartialEq + 'a,
-    R: TryFrom<u64> + PartialEq + Ord + Borrow<T>
+    type_remainder: u64,
+) -> ResultBtAny<R>
+where
+    T: PartialEq + 'a,
+    R: TryFrom<u64> + PartialEq + Ord + Borrow<T>,
 {
     loop {
         let inode_id = generate_jumpoff_inode() + type_remainder;
@@ -53,15 +59,17 @@ pub struct FileInode {
 }
 
 impl FileInode {
-    pub fn get_id(&self) -> u64 { self.id }
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
 
     pub fn get_is_file(inode_id: u64) -> bool {
         get_is_inode_type(inode_id, FILE_TYPE_REMAINDER)
     }
 
-    pub fn try_from_free_inodes<'a>(inodes_inuse: impl Iterator<Item = &'a FileInode>)
-        -> ResultBtAny<FileInode>
-    {
+    pub fn try_from_free_inodes<'a>(
+        inodes_inuse: impl Iterator<Item = &'a FileInode>,
+    ) -> ResultBtAny<FileInode> {
         generate_free_inode_(inodes_inuse, FILE_TYPE_REMAINDER)
     }
 }
@@ -73,9 +81,7 @@ impl TryFrom<u64> for FileInode {
         if !Self::get_is_file(value) {
             Err(format!("Not a valid file inode value `{value}`."))?;
         };
-        Ok(Self {
-            id: value,
-        })
+        Ok(Self { id: value })
     }
 }
 
@@ -91,15 +97,17 @@ pub struct TagInode {
 }
 
 impl TagInode {
-    pub fn get_id(&self) -> u64 { self.id }
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
 
     pub fn get_is_tag(inode_id: u64) -> bool {
         get_is_inode_type(inode_id, TAG_TYPE_REMAINDER)
     }
-    
-    pub fn try_from_free_inodes<'a>(inodes_inuse: impl Iterator<Item = &'a TagInode>)
-        -> ResultBtAny<TagInode>
-    {
+
+    pub fn try_from_free_inodes<'a>(
+        inodes_inuse: impl Iterator<Item = &'a TagInode>,
+    ) -> ResultBtAny<TagInode> {
         generate_free_inode_(inodes_inuse, TAG_TYPE_REMAINDER)
     }
 }
@@ -111,9 +119,7 @@ impl TryFrom<u64> for TagInode {
         if !Self::get_is_tag(value) {
             Err(format!("Not a valid tag inode value `{value}`."))?;
         };
-        Ok(Self {
-            id: value,
-        })
+        Ok(Self { id: value })
     }
 }
 
@@ -140,7 +146,10 @@ impl From<TagInode> for TagInodes {
     }
 }
 
-impl<T> From<T> for TagInodes where T: Iterator<Item = TagInode> {
+impl<T> From<T> for TagInodes
+where
+    T: Iterator<Item = TagInode>,
+{
     fn from(value: T) -> Self {
         let mut tag_inodes = Self::new();
         value.for_each(|inode| _ = tag_inodes.0.insert(inode));
@@ -156,19 +165,21 @@ impl Display for TagInodes {
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub struct NamespaceInode {
-    id: u64
+    id: u64,
 }
 
 impl NamespaceInode {
-    pub fn get_id(&self) -> u64 { self.id }
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
 
     pub fn get_is_namespace(inode_id: u64) -> bool {
         get_is_inode_type(inode_id, NAMESPACE_TYPE_REMAINDER)
     }
 
-    pub fn try_from_free_inodes<'a>(inodes_inuse: impl Iterator<Item = &'a NamespaceInode>)
-        -> ResultBtAny<NamespaceInode>
-    {
+    pub fn try_from_free_inodes<'a>(
+        inodes_inuse: impl Iterator<Item = &'a NamespaceInode>,
+    ) -> ResultBtAny<NamespaceInode> {
         generate_free_inode_(inodes_inuse, NAMESPACE_TYPE_REMAINDER)
     }
 }
@@ -184,7 +195,7 @@ impl TryFrom<u64> for NamespaceInode {
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         if !Self::get_is_namespace(value) {
-            return Err(format!("Not a valid namespace inode value `{value}`.").into()); 
+            return Err(format!("Not a valid namespace inode value `{value}`.").into());
         }
         Ok(Self { id: value })
     }

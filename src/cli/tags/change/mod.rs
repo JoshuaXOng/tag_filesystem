@@ -4,13 +4,17 @@ use bon::Builder;
 use clap::Parser;
 use tracing::info;
 
-use crate::{errors::ResultBtAny, path::{format_tags, get_current_tags}, wrappers::StrExt};
+use crate::{
+    errors::ResultBtAny,
+    path::{format_tags, get_current_tags},
+    wrappers::StrExt,
+};
 
 #[derive(Parser, PartialEq, Debug)]
 pub struct ChangeParameters {
     #[arg(short = 'n', default_value_t = false)]
     pub are_negated: bool,
-    pub tags: Vec<ChangeTag>
+    pub tags: Vec<ChangeTag>,
 }
 
 impl ChangeParameters {
@@ -28,7 +32,7 @@ impl ChangeParameters {
 pub struct ChangeTag {
     #[builder(default = false)]
     pub is_negated: bool,
-    pub name: String 
+    pub name: String,
 }
 
 impl ChangeTag {
@@ -52,15 +56,18 @@ pub fn get_changed_path(change_arguments: &ChangeParameters) -> ResultBtAny<Path
     let mut current_path = current_dir()?;
     info!("Current path is `{}`.", current_path.to_string_lossy());
 
-    let directory_name = current_path.file_name()
-        .ok_or(format!("Path `{}` has no file name.", current_path.to_string_lossy()))?
+    let directory_name = current_path
+        .file_name()
+        .ok_or(format!(
+            "Path `{}` has no file name.",
+            current_path.to_string_lossy()
+        ))?
         .to_string_lossy();
     if !directory_name.starts_with('{') && !directory_name.ends_with('}') {
         current_path.push("{}")
     }
-    
-    let mut current_tags = get_current_tags(&current_path)?
-        .collect::<Vec<_>>();
+
+    let mut current_tags = get_current_tags(&current_path)?.collect::<Vec<_>>();
     for change_tag in &change_arguments.tags {
         if change_tag.is_negated ^ change_arguments.are_negated {
             current_tags.retain(|tag| tag != &change_tag.name);

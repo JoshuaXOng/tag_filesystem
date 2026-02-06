@@ -1,11 +1,16 @@
 use std::{fs::read_to_string, path::PathBuf};
 
-use crate::{files::TfsFile, inodes::{FileInode, NamespaceInode, TagInode},
-    namespaces::TfsNamespace, path::get_configuration_directory, tags::TfsTag};
+use crate::{
+    files::TfsFile,
+    inodes::{FileInode, NamespaceInode, TagInode},
+    namespaces::TfsNamespace,
+    path::get_configuration_directory,
+    tags::TfsTag,
+};
 
 #[derive(Debug)]
 pub struct TfsJournal {
-    operations: Vec<TfsOperation>
+    operations: Vec<TfsOperation>,
 }
 
 impl TfsJournal {
@@ -15,11 +20,9 @@ impl TfsJournal {
         let to_journal = Self::get_journal_file_path();
         let journal_content = read_to_string(to_journal);
 
-        Self {
-            operations: vec![]
-        }
+        Self { operations: vec![] }
     }
-    
+
     fn get_journal_file_path() -> PathBuf {
         get_configuration_directory().join(Self::JOURNAL_FILE_NAME)
     }
@@ -47,19 +50,17 @@ pub enum TfsOperation {
     WriteToFile {
         file_inode: FileInode,
         start_position: u64,
-        to_write: Vec<u8>
+        to_write: Vec<u8>,
     },
     RemoveFile {
-        remove_inode: FileInode
+        remove_inode: FileInode,
     },
     RemoveTag {
-        remove_inode: TagInode
+        remove_inode: TagInode,
     },
     RemoveNamespace {
-        remove_inode: NamespaceInode
+        remove_inode: NamespaceInode,
     },
 }
 
-impl TfsOperation {
-    
-}
+impl TfsOperation {}

@@ -1,26 +1,46 @@
-use std::{fmt::Display, fs::File, io::BufReader, path::PathBuf, thread::sleep,
-    time::{Duration, Instant, SystemTime}};
+use std::{
+    fmt::Display,
+    fs::File,
+    io::BufReader,
+    path::PathBuf,
+    thread::sleep,
+    time::{Duration, Instant, SystemTime},
+};
 
 use bon::bon;
-use fuser::{spawn_mount2, FileAttr, MountOption};
+use fuser::{FileAttr, MountOption, spawn_mount2};
 use libc::SIGTERM;
 use nix::unistd::{getegid, geteuid};
 use signal_hook::iterator::Signals;
 use tracing::{info, instrument, warn};
 
+use crate::{
+    WithBacktrace,
+    entries::TfsEntry,
+    errors::{AnyError, ResultBtAny, collect_errors},
+    files::{IndexedFiles, TfsFile},
+    inodes::{FileInode, NamespaceInode, TagInode, TagInodes},
+    journal::TfsJournal,
+    namespaces::{IndexedNamepsaces, TfsNamespace},
+    os::{COMMON_BLOCK_SIZE, NO_RDEV},
+    path::{format_tags, parse_tags},
+    persistence::{
+        PersistedTfs, deserialize_tag_filesystem, new_root_fuser, serialize_tag_filesystem,
+    },
+    snapshots::{PersistentSnapshots, TfsSnapshots},
+    storage::{DelegateStorage, TfsStorage},
+    tags::{IndexedTags, TfsTag},
+    wrappers::VecWrapper,
+};
 #[cfg(test)]
 use crate::{snapshots::StubSnapshots, storage::StubStorage};
-use crate::{entries::TfsEntry, errors::{collect_errors, AnyError, ResultBtAny},
-    files::{IndexedFiles, TfsFile}, inodes::{FileInode, NamespaceInode, TagInode, TagInodes},
-    journal::TfsJournal, namespaces::{IndexedNamepsaces, TfsNamespace}, os::{COMMON_BLOCK_SIZE,
-    NO_RDEV}, path::{format_tags, parse_tags}, persistence::{deserialize_tag_filesystem,
-    new_root_fuser, serialize_tag_filesystem, PersistedTfs}, snapshots::{PersistentSnapshots,
-    TfsSnapshots}, storage::{DelegateStorage, TfsStorage}, tags::{IndexedTags, TfsTag},
-    wrappers::VecWrapper, WithBacktrace};
 
 #[derive(Debug)]
 pub struct TagFilesystem<Storage = DelegateStorage, Snapshots = PersistentSnapshots>
-where Storage: TfsStorage, Snapshots: TfsSnapshots {
+where
+    Storage: TfsStorage,
+    Snapshots: TfsSnapshots,
+{
     root: FileAttr,
     files: IndexedFiles,
     tags: IndexedTags,
@@ -48,8 +68,11 @@ impl TagFilesystem {
             .when_created(SystemTime::now())
             .call();
         if let Ok(safe_snapshot) = filesystem_snapshots.open_safe() {
-            let PersistedTfs { root: _root_fuser, files: persisted_files, tags: persisted_tags }
-                = deserialize_tag_filesystem(BufReader::new(&safe_snapshot))?;
+            let PersistedTfs {
+                root: _root_fuser,
+                files: persisted_files,
+                tags: persisted_tags,
+            } = deserialize_tag_filesystem(BufReader::new(&safe_snapshot))?;
             root_fuser = _root_fuser;
             for persisted_file in persisted_files {
                 indexed_files.add(persisted_file)?;
@@ -65,15 +88,17 @@ impl TagFilesystem {
             namespaces: IndexedNamepsaces::new(),
             storage: DelegateStorage::try_new(mount_path)?,
             snapshots: filesystem_snapshots,
-            journal: TfsJournal::new()
+            journal: TfsJournal::new(),
         })
     }
 
     #[instrument]
     pub fn run_filesystem(mount_path: &PathBuf) -> ResultBtAny<()> {
-        let mount_handle = spawn_mount2(Self::try_new(mount_path)?,
+        let mount_handle = spawn_mount2(
+            Self::try_new(mount_path)?,
             mount_path,
-            &[MountOption::AutoUnmount, MountOption::AllowRoot])?;
+            &[MountOption::AutoUnmount, MountOption::AllowRoot],
+        )?;
         info!("Mounted TFS at `{}`.", mount_path.to_string_lossy());
 
         let mut unix_signals = Signals::new(&[SIGTERM])?;
@@ -82,7 +107,7 @@ impl TagFilesystem {
         let mut last_sync = Instant::now();
         loop {
             sleep(Duration::from_secs(Self::LOOP_COOLDOWN_SECONDS));
-            info!("Slept `{}` seconds.", Self::LOOP_COOLDOWN_SECONDS); 
+            info!("Slept `{}` seconds.", Self::LOOP_COOLDOWN_SECONDS);
 
             let should_persist =
                 last_sync.elapsed() > Duration::from_secs(Self::PERSIST_COOLDOWN_SECONDS);
@@ -109,7 +134,10 @@ impl TagFilesystem {
 // - Correct `blocks`, `nlink` and `flags` values for `to_fuser`.
 #[bon]
 impl<Storage, Snapshots> TagFilesystem<Storage, Snapshots>
-where Storage: TfsStorage, Snapshots: TfsSnapshots {
+where
+    Storage: TfsStorage,
+    Snapshots: TfsSnapshots,
+{
     pub fn get_root_fuser(&self) -> FileAttr {
         self.root
     }
@@ -138,31 +166,45 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         self.namespaces.get_free_inode()
     }
 
-    pub fn get_file_by_name_and_namespace_inode(&self, file_name: &str,
-        namespace_inode: &NamespaceInode) -> ResultBtAny<&TfsFile>
-    {
+    pub fn get_file_by_name_and_namespace_inode(
+        &self,
+        file_name: &str,
+        namespace_inode: &NamespaceInode,
+    ) -> ResultBtAny<&TfsFile> {
         let namespace_tags = &self.namespaces.get_by_inode(namespace_inode)?.tags;
-        self.files.get_by_name_and_tags(file_name, namespace_tags)
-            .ok_or(format!("File with name `{file_name}` and tags `{namespace_tags}` \
-                does not exist.").into())
+        self.files
+            .get_by_name_and_tags(file_name, namespace_tags)
+            .ok_or(
+                format!(
+                    "File with name `{file_name}` and tags `{namespace_tags}` \
+                does not exist."
+                )
+                .into(),
+            )
     }
 
-    pub fn get_files_by_namespace_inode<'a>(&'a self, namespace_inode: &NamespaceInode)
-    -> ResultBtAny<impl Iterator<Item = &'a TfsFile>> {
+    pub fn get_files_by_namespace_inode<'a>(
+        &'a self,
+        namespace_inode: &NamespaceInode,
+    ) -> ResultBtAny<impl Iterator<Item = &'a TfsFile>> {
         let namespace_tags = &self.namespaces.get_by_inode(namespace_inode)?.tags;
         Ok(self.files.get_by_tags(namespace_tags))
     }
 
-    pub fn get_inrange_tags<'a>(&self, tag_inodes: impl Into<&'a TagInodes>)
-    -> ResultBtAny<Vec<&TfsTag>> {
+    pub fn get_inrange_tags<'a>(
+        &self,
+        tag_inodes: impl Into<&'a TagInodes>,
+    ) -> ResultBtAny<Vec<&TfsTag>> {
         let tag_inodes = tag_inodes.into();
 
         let mut inrange_tags = vec![];
 
         for tag_inode in &tag_inodes.0 {
-            inrange_tags.push(self.get_tags()
-                .get_by_inode(tag_inode)
-                .ok_or(format!("Tag inode `{tag_inode}` does not exist."))?);
+            inrange_tags.push(
+                self.get_tags()
+                    .get_by_inode(tag_inode)
+                    .ok_or(format!("Tag inode `{tag_inode}` does not exist."))?,
+            );
         }
 
         inrange_tags.extend(self.get_neighbour_tags(tag_inodes)?);
@@ -170,47 +212,65 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(inrange_tags)
     }
 
-    pub fn get_neighbour_tags<'a>(&self, tag_inodes: impl Into<&'a TagInodes>)
-    -> ResultBtAny<Vec<&TfsTag>> {
+    pub fn get_neighbour_tags<'a>(
+        &self,
+        tag_inodes: impl Into<&'a TagInodes>,
+    ) -> ResultBtAny<Vec<&TfsTag>> {
         let tag_inodes = tag_inodes.into();
 
         let neighbour_inodes = self.files.get_neighbour_tag_inodes(tag_inodes);
-        neighbour_inodes.0.iter()  
-            .map(|inode| self.tags.get_by_inode(inode)
-                .ok_or(format!("Tag inode with id `{}` \
-                    does not exist.", inode.get_id()).into()))
+        neighbour_inodes
+            .0
+            .iter()
+            .map(|inode| {
+                self.tags.get_by_inode(inode).ok_or(
+                    format!(
+                        "Tag inode with id `{}` \
+                    does not exist.",
+                        inode.get_id()
+                    )
+                    .into(),
+                )
+            })
             .collect()
     }
 
     #[instrument]
-    fn get_namespace_string_from_tags(filesystem_tags: &IndexedTags,
-        tag_inodes: &TagInodes) -> ResultBtAny<String>
-    {
+    fn get_namespace_string_from_tags(
+        filesystem_tags: &IndexedTags,
+        tag_inodes: &TagInodes,
+    ) -> ResultBtAny<String> {
         let mut existent_inodes = vec![];
         let mut nonexistent_inodes = vec![];
         for tag_inode in &tag_inodes.0 {
             match filesystem_tags.get_by_inode(tag_inode) {
                 Some(tag) => existent_inodes.push(tag),
-                None => nonexistent_inodes.push(tag_inode)
+                None => nonexistent_inodes.push(tag_inode),
             }
         }
 
         if !nonexistent_inodes.is_empty() {
-            Err(format!("The following tag inodes don't exist `{}`.",
-                VecWrapper(nonexistent_inodes)))?;
+            Err(format!(
+                "The following tag inodes don't exist `{}`.",
+                VecWrapper(nonexistent_inodes)
+            ))?;
         }
 
-        Ok(format_tags(existent_inodes.iter()
-            .map(|tag| tag.name.as_str())))
+        Ok(format_tags(
+            existent_inodes.iter().map(|tag| tag.name.as_str()),
+        ))
     }
 
-    pub fn get_tag_inodes_from_namespace_string(&self, namespace_string: &str)
-        -> ResultBtAny<TagInodes>
-    {
+    pub fn get_tag_inodes_from_namespace_string(
+        &self,
+        namespace_string: &str,
+    ) -> ResultBtAny<TagInodes> {
         let namespace_tags = parse_tags(&namespace_string);
-        let mut _namespace_tags = TagInodes::new(); 
+        let mut _namespace_tags = TagInodes::new();
         for namespace_tag in namespace_tags {
-            let namespace_tag = self.tags.get_by_name(namespace_tag)
+            let namespace_tag = self
+                .tags
+                .get_by_name(namespace_tag)
                 .ok_or(format!("`{namespace_tag}` does not exist."))?;
 
             _namespace_tags.0.insert(namespace_tag.inode);
@@ -221,16 +281,22 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     pub fn get_fuser_attributes(&self, inode_id: u64) -> ResultBtAny<FileAttr> {
         FileInode::try_from(inode_id)
             .and_then(|inode| self.get_file_fuser(&inode))
-            .or(TagInode::try_from(inode_id)
-                .and_then(|inode| self.get_tag_fuser(&inode)))
-                .or(NamespaceInode::try_from(inode_id)
-                    .and_then(|inode| self.get_namespace_fuser(&inode)))
-            .map_err(|_| format!("`{inode_id}` is not either of a file,
-                tag or namespace inode.").into())
+            .or(TagInode::try_from(inode_id).and_then(|inode| self.get_tag_fuser(&inode)))
+            .or(NamespaceInode::try_from(inode_id)
+                .and_then(|inode| self.get_namespace_fuser(&inode)))
+            .map_err(|_| {
+                format!(
+                    "`{inode_id}` is not either of a file,
+                tag or namespace inode."
+                )
+                .into()
+            })
     }
 
     pub fn get_file_fuser(&self, file_inode: &FileInode) -> ResultBtAny<FileAttr> {
-        let target_file = self.files.get_by_inode(&file_inode)
+        let target_file = self
+            .files
+            .get_by_inode(&file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist."))?;
         Ok(Self::to_fuser()
             .tfs_entry(target_file)
@@ -239,18 +305,16 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn get_tag_fuser(&self, tag_inode: &TagInode) -> ResultBtAny<FileAttr> {
-        let target_tag = self.tags.get_by_inode(&tag_inode)
+        let target_tag = self
+            .tags
+            .get_by_inode(&tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist."))?;
-        Ok(Self::to_fuser()
-            .tfs_entry(target_tag)
-            .call())
+        Ok(Self::to_fuser().tfs_entry(target_tag).call())
     }
 
     pub fn get_namespace_fuser(&self, namespace_inode: &NamespaceInode) -> ResultBtAny<FileAttr> {
         let target_namespace = self.namespaces.get_by_inode(&namespace_inode)?;
-        Ok(Self::to_fuser()
-            .tfs_entry(target_namespace)
-            .call())
+        Ok(Self::to_fuser().tfs_entry(target_namespace).call())
     }
 
     #[builder]
@@ -276,35 +340,45 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     fn check_tags_exist(&self, to_check: &TagInodes) -> ResultBtAny<()> {
-        let doesnt_exist: Vec<_> = to_check.0.iter()
-            .filter(|inode| self.tags.get_by_inode(inode)
-                .is_none())
+        let doesnt_exist: Vec<_> = to_check
+            .0
+            .iter()
+            .filter(|inode| self.tags.get_by_inode(inode).is_none())
             .collect();
         if doesnt_exist.len() > 0 {
             Err(format!(
                 "These tag inodes don't exist `{}`.",
-                VecWrapper(doesnt_exist)))?;
+                VecWrapper(doesnt_exist)
+            ))?;
         }
         Ok(())
     }
 
     fn check_if_file_is_valid(&self, to_check: &TfsFile) -> ResultBtAny<()> {
-        if let Some(similar_file) = self.files.get_by_name_and_tags(&to_check.name,
-            &to_check.tags)
+        if let Some(similar_file) = self
+            .files
+            .get_by_name_and_tags(&to_check.name, &to_check.tags)
         {
             let are_files_same = to_check.inode == similar_file.inode;
             if !are_files_same {
-                return Err(format!("File with name `{}` and tags `{}` already \
-                    exists.", to_check.inode, to_check.tags).into());
+                return Err(format!(
+                    "File with name `{}` and tags `{}` already \
+                    exists.",
+                    to_check.inode, to_check.tags
+                )
+                .into());
             }
         }
 
         for inrange_tag in self.get_inrange_tags(to_check)? {
             let are_names_name = to_check.name == inrange_tag.name;
             if are_names_name {
-                return Err(format!("File name is same as one of it's tags \
+                return Err(format!(
+                    "File name is same as one of it's tags \
                     or neighbouring tags, `{}`.",
-                    to_check.name).into());
+                    to_check.name
+                )
+                .into());
             }
         }
         Ok(())
@@ -312,7 +386,9 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 
     fn check_if_tag_is_valid<'a>(&self, tag_inode: impl Into<&'a TagInode>) -> ResultBtAny<()> {
         let tag_inode = tag_inode.into();
-        let target_tag = self.tags.get_by_inode(tag_inode)
+        let target_tag = self
+            .tags
+            .get_by_inode(tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist."))?;
         self.check_if_tag_is_valid_(target_tag)
     }
@@ -320,10 +396,9 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     fn check_if_tag_is_valid_(&self, to_check: &TfsTag) -> ResultBtAny<()> {
         for tfs_tag in self.tags.get_all() {
             let is_same = to_check.inode == tfs_tag.inode;
-            let is_colliding = to_check.name == tfs_tag.name; 
+            let is_colliding = to_check.name == tfs_tag.name;
             if !is_same && is_colliding {
-                return Err(format!("Tag already exists with name `{}`",
-                    to_check.name).into());
+                return Err(format!("Tag already exists with name `{}`", to_check.name).into());
             }
         }
 
@@ -335,8 +410,11 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             for file in self.files.get_by_tags(&tag_inodes) {
                 let is_colliding = to_check.name == file.name;
                 if is_colliding {
-                    return Err(format!("Tag has same name as file w/ this tag, `{}`.",
-                        to_check.name).into());
+                    return Err(format!(
+                        "Tag has same name as file w/ this tag, `{}`.",
+                        to_check.name
+                    )
+                    .into());
                 }
             }
 
@@ -345,8 +423,11 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
             for file in self.files.get_by_tags(&tag_inodes) {
                 let is_colliding = to_check.name == file.name;
                 if is_colliding {
-                    return Err(format!("Tag has same name as neighbouring file, `{}`.",
-                        to_check.name).into());
+                    return Err(format!(
+                        "Tag has same name as neighbouring file, `{}`.",
+                        to_check.name
+                    )
+                    .into());
                 }
             }
         }
@@ -354,8 +435,9 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         for untagged_file in self.files.get_by_tags(&TagInodes::new()) {
             let is_colliding = to_check.name == untagged_file.name;
             if is_colliding {
-                return Err(format!("Tag has same name as untagged file, `{}`.",
-                    to_check.name).into());
+                return Err(
+                    format!("Tag has same name as untagged file, `{}`.", to_check.name).into(),
+                );
             }
         }
         Ok(())
@@ -366,13 +448,18 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     #[builder]
-    pub fn add_file(&mut self, file_name: impl Into<String>, owner_id: u32, group_id: u32,
+    pub fn add_file(
+        &mut self,
+        file_name: impl Into<String>,
+        owner_id: u32,
+        group_id: u32,
         permissions: Option<u16>,
-        when_accessed: Option<SystemTime>, when_modified: Option<SystemTime>,
-        when_changed: Option<SystemTime>, when_created: Option<SystemTime>,
-        tag_inodes: Option<TagInodes>)
-        -> ResultBtAny<&TfsFile>
-    {
+        when_accessed: Option<SystemTime>,
+        when_modified: Option<SystemTime>,
+        when_changed: Option<SystemTime>,
+        when_created: Option<SystemTime>,
+        tag_inodes: Option<TagInodes>,
+    ) -> ResultBtAny<&TfsFile> {
         let mut tfs_file = TfsFile::builder()
             .name(file_name.into())
             .inode(self.get_free_file_inode()?)
@@ -393,12 +480,17 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     #[builder]
-    pub fn add_tag(&mut self, tag_name: impl Into<String>, owner_id: u32, group_id: u32,
+    pub fn add_tag(
+        &mut self,
+        tag_name: impl Into<String>,
+        owner_id: u32,
+        group_id: u32,
         permissions: Option<u16>,
-        when_accessed: Option<SystemTime>, when_modified: Option<SystemTime>,
-        when_changed: Option<SystemTime>, when_created: Option<SystemTime>)
-        -> ResultBtAny<&TfsTag>
-    {
+        when_accessed: Option<SystemTime>,
+        when_modified: Option<SystemTime>,
+        when_changed: Option<SystemTime>,
+        when_created: Option<SystemTime>,
+    ) -> ResultBtAny<&TfsTag> {
         let mut tfs_tag = TfsTag::builder()
             .name(tag_name.into())
             .inode(self.get_free_tag_inode()?)
@@ -415,78 +507,110 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     #[builder]
-    pub fn add_namespace_with_name(&mut self, namespace_string: String, owner_id: u32,
-        group_id: u32) -> ResultBtAny<&TfsNamespace>
-    {
+    pub fn add_namespace_with_name(
+        &mut self,
+        namespace_string: String,
+        owner_id: u32,
+        group_id: u32,
+    ) -> ResultBtAny<&TfsNamespace> {
         let namespace_tags = self.get_tag_inodes_from_namespace_string(&namespace_string)?;
-        self.namespaces.add(TfsNamespace::builder()
-            .name(namespace_string)
-            .inode(self.get_free_namespace_inode()?)
-            .tags(namespace_tags)
-            .owner(owner_id)
-            .group(group_id)
-            .build())
+        self.namespaces.add(
+            TfsNamespace::builder()
+                .name(namespace_string)
+                .inode(self.get_free_namespace_inode()?)
+                .tags(namespace_tags)
+                .owner(owner_id)
+                .group(group_id)
+                .build(),
+        )
     }
 
     #[builder]
-    pub fn add_namespace_with_tag_inodes(&mut self, tag_inodes: TagInodes, owner_id: u32,
-        group_id: u32) -> ResultBtAny<&TfsNamespace>
-    {
-        self.namespaces.add(TfsNamespace::builder()
-            .name(Self::get_namespace_string_from_tags(&self.tags, &tag_inodes)?)
-            .inode(self.get_free_namespace_inode()?)
-            .tags(tag_inodes)
-            .owner(owner_id)
-            .group(group_id)
-            .build())
+    pub fn add_namespace_with_tag_inodes(
+        &mut self,
+        tag_inodes: TagInodes,
+        owner_id: u32,
+        group_id: u32,
+    ) -> ResultBtAny<&TfsNamespace> {
+        self.namespaces.add(
+            TfsNamespace::builder()
+                .name(Self::get_namespace_string_from_tags(
+                    &self.tags,
+                    &tag_inodes,
+                )?)
+                .inode(self.get_free_namespace_inode()?)
+                .tags(tag_inodes)
+                .owner(owner_id)
+                .group(group_id)
+                .build(),
+        )
     }
-    
+
     pub fn save_persistently(&self) -> ResultBtAny<()> {
         serialize_tag_filesystem(
             &self.snapshots.create_staging()?,
             &self.get_root_fuser(),
             self.files.get_all().collect(),
-            self.tags.get_all().collect())?;
+            self.tags.get_all().collect(),
+        )?;
         self.snapshots.promote_staging()?;
         Ok(())
     }
 
-    pub fn write_to_file(&mut self, file_inode: &FileInode, start_position: u64, to_write: &[u8])
-    -> ResultBtAny<()> {
+    pub fn write_to_file(
+        &mut self,
+        file_inode: &FileInode,
+        start_position: u64,
+        to_write: &[u8],
+    ) -> ResultBtAny<()> {
         self.storage.write(file_inode, start_position, to_write)
     }
-    
-    pub fn move_file<'a>(&mut self,
-        old_tags: impl Into<&'a TagInodes>, old_name: &str,
-        new_tags: impl Into<TagInodes>, new_name: String)
-    -> ResultBtAny<()> {
+
+    pub fn move_file<'a>(
+        &mut self,
+        old_tags: impl Into<&'a TagInodes>,
+        old_name: &str,
+        new_tags: impl Into<TagInodes>,
+        new_name: String,
+    ) -> ResultBtAny<()> {
         let old_tags = old_tags.into();
         let new_tags = new_tags.into();
 
-        self.files.do_by_name_and_tags(old_name, old_tags, |mut file| {
-            file.try_set_name(new_name.clone())?;
-            file.try_set_tags(new_tags.clone())
-        })
+        self.files
+            .do_by_name_and_tags(old_name, old_tags, |mut file| {
+                file.try_set_name(new_name.clone())?;
+                file.try_set_tags(new_tags.clone())
+            })
             .flatten()?;
-        let modified_file = self.files.get_by_name_and_tags(&new_name, &new_tags)
+        let modified_file = self
+            .files
+            .get_by_name_and_tags(&new_name, &new_tags)
             .expect("To have just set name and tags prior.");
 
-        let e = self.check_if_file_is_valid(modified_file)
-            .err();
-        let errors = new_tags.0.iter()
+        let e = self.check_if_file_is_valid(modified_file).err();
+        let errors = new_tags
+            .0
+            .iter()
             .filter_map(|inode| self.check_if_tag_is_valid(inode).err())
             .collect::<Vec<_>>();
         if e.is_some() || !errors.is_empty() {
-            self.files.do_by_name_and_tags(&new_name, &new_tags, |mut file| {
-                file.try_set_name(old_name.to_string())?;
-                file.try_set_tags(old_tags.clone())
-            })
+            self.files
+                .do_by_name_and_tags(&new_name, &new_tags, |mut file| {
+                    file.try_set_name(old_name.to_string())?;
+                    file.try_set_tags(old_tags.clone())
+                })
                 .flatten()
-                .expect("To have nothing take up old name and tags in the \
-                    meanwhile.");
+                .expect(
+                    "To have nothing take up old name and tags in the \
+                    meanwhile.",
+                );
             let mut _e = String::from("Name and tag(s) combination is invalid.");
-            if let Some(e) = e { _e += &format!(" {e:?}") }
-            for e in errors { _e += &format!(" {e:?}") }
+            if let Some(e) = e {
+                _e += &format!(" {e:?}")
+            }
+            for e in errors {
+                _e += &format!(" {e:?}")
+            }
             return Err(_e.into());
         }
 
@@ -494,26 +618,31 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
     }
 
     pub fn rename_tag(&mut self, old_name: &str, new_name: String) -> ResultBtAny<()> {
-        let tag_inode = self.tags.get_by_name(old_name)
+        let tag_inode = self
+            .tags
+            .get_by_name(old_name)
             .ok_or(format!("Tag `{old_name}` does not exist"))?
             .inode;
-        self.tags.do_by_inode(&tag_inode, |mut tag| tag.try_set_name(new_name))
+        self.tags
+            .do_by_inode(&tag_inode, |mut tag| tag.try_set_name(new_name))
             .flatten()?;
-        
+
         let e = self.check_if_tag_is_valid(&tag_inode);
         if e.is_err() {
-            self.tags.do_by_inode(&tag_inode,
-                |mut tag| tag.try_set_name(old_name.to_string()))
+            self.tags
+                .do_by_inode(&tag_inode, |mut tag| tag.try_set_name(old_name.to_string()))
                 .flatten()
-                .expect("To have just indexed with the same inode. To be reverting \
-                    to an unused name.");
+                .expect(
+                    "To have just indexed with the same inode. To be reverting \
+                    to an unused name.",
+                );
             return e;
         }
 
         let namespace_updates = self.namespaces.do_for_all(|namespace_update| {
             if namespace_update.tags.0.contains(&tag_inode) {
-                let namespace_string = Self::get_namespace_string_from_tags(
-                    &self.tags, namespace_update.tags)?;
+                let namespace_string =
+                    Self::get_namespace_string_from_tags(&self.tags, namespace_update.tags)?;
                 *namespace_update.name = namespace_string;
             }
             Ok::<_, WithBacktrace<AnyError>>(())
@@ -523,36 +652,45 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
         Ok(())
     }
 
-    pub fn remove_file_by_name_and_tags<'a>(&mut self, file_name: &str,
-        tag_inodes: impl Into<&'a TagInodes>)
-    -> ResultBtAny<TfsFile> {
+    pub fn remove_file_by_name_and_tags<'a>(
+        &mut self,
+        file_name: &str,
+        tag_inodes: impl Into<&'a TagInodes>,
+    ) -> ResultBtAny<TfsFile> {
         let tag_inodes = tag_inodes.into();
-        let removed_file = self.files.remove_by_name_and_tags(file_name, tag_inodes)
-            .ok_or(format!("No file matching name `{file_name}` and tag inodes \
-                `{tag_inodes}`."))?;
+        let removed_file = self
+            .files
+            .remove_by_name_and_tags(file_name, tag_inodes)
+            .ok_or(format!(
+                "No file matching name `{file_name}` and tag inodes \
+                `{tag_inodes}`."
+            ))?;
         self.storage.delete(&removed_file.inode)?;
         Ok(removed_file)
     }
 
     #[instrument(skip_all, fields(?tag_name))]
     pub fn delete_tag(&mut self, tag_name: &str) -> ResultBtAny<TfsTag> {
-        let removed_tag = self.tags.remove_by_name(&tag_name)
+        let removed_tag = self
+            .tags
+            .remove_by_name(&tag_name)
             .ok_or(format!("Tag `{tag_name}` does not exist."))?;
-        let tag_sets: Vec<_> = self.files.get_tag_sets()
-            .cloned()
-            .collect();
+        let tag_sets: Vec<_> = self.files.get_tag_sets().cloned().collect();
         for tag_set in tag_sets {
             if !tag_set.0.contains(&removed_tag.inode) {
                 continue;
             }
-            
+
             self.files.do_by_tags(&tag_set, |target_files| {
-                *target_files = target_files.drain()
+                *target_files = target_files
+                    .drain()
                     .map(|mut file| {
                         let did_remove = file.tags.0.remove(&removed_tag.inode);
                         if !did_remove {
-                            warn!("Expected to have filtered for 
-                                files that have the tag.");
+                            warn!(
+                                "Expected to have filtered for 
+                                files that have the tag."
+                            );
                         }
                         file
                     })
@@ -562,8 +700,8 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 
         let namespace_updates = self.namespaces.do_for_all(|namespace_update| {
             if namespace_update.tags.0.remove(&removed_tag.inode) {
-                let namespace_string = Self::get_namespace_string_from_tags(
-                    &self.tags, namespace_update.tags)?;
+                let namespace_string =
+                    Self::get_namespace_string_from_tags(&self.tags, namespace_update.tags)?;
                 *namespace_update.name = namespace_string;
             }
             Ok::<_, WithBacktrace<AnyError>>(())
@@ -575,7 +713,10 @@ where Storage: TfsStorage, Snapshots: TfsSnapshots {
 }
 
 impl<Storage, Snapshots> Display for TagFilesystem<Storage, Snapshots>
-where Storage: TfsStorage, Snapshots: TfsSnapshots {
+where
+    Storage: TfsStorage,
+    Snapshots: TfsSnapshots,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TagFilesystem(")?;
         write!(f, "files={}, ", self.files)?;

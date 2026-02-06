@@ -1,4 +1,8 @@
-use std::{fs::{self, create_dir_all, File}, io::Write, path::{Path, PathBuf}};
+use std::{
+    fs::{self, File, create_dir_all},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use derive_more::{Display, Error};
 use drums::Backtrace;
@@ -6,12 +10,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{info, instrument};
 
-use crate::{errors::{AnyError, ResultBt, ResultBtAny},
-    path::get_configuration_directory, wrappers::PathExt};
+use crate::{
+    errors::{AnyError, ResultBt, ResultBtAny},
+    path::get_configuration_directory,
+    wrappers::PathExt,
+};
 
 pub trait TfsSnapshots {
     fn open_safe(&self) -> ResultBt<File, OpenError>;
-    fn create_staging(&self) -> ResultBtAny<File>; 
+    fn create_staging(&self) -> ResultBtAny<File>;
     fn promote_staging(&self) -> ResultBtAny<()>;
 }
 
@@ -20,7 +27,7 @@ pub trait TfsSnapshots {
 #[bt_from(AnyError, std::io::Error)]
 pub enum OpenError {
     Checksum(AnyError),
-    Other(AnyError)
+    Other(AnyError),
 }
 
 impl From<AnyError> for OpenError {
@@ -37,7 +44,7 @@ impl From<std::io::Error> for OpenError {
 
 #[derive(Debug)]
 pub struct PersistentSnapshots {
-    root: PathBuf
+    root: PathBuf,
 }
 
 impl PersistentSnapshots {
@@ -53,15 +60,21 @@ impl PersistentSnapshots {
             .join(location_suffix.__strip_prefix("/"));
         let does_exist = snapshot_directory.try_exists()?;
         if does_exist && !snapshot_directory.is_dir() {
-            return Err(format!("`{}` already exists as a non-directory.",
-                snapshot_directory.to_string_lossy()).into()); 
+            return Err(format!(
+                "`{}` already exists as a non-directory.",
+                snapshot_directory.to_string_lossy()
+            )
+            .into());
         } else if !does_exist {
             create_dir_all(&snapshot_directory)?;
-            info!("Created directory `{}`.", snapshot_directory.to_string_lossy());
+            info!(
+                "Created directory `{}`.",
+                snapshot_directory.to_string_lossy()
+            );
         }
 
         let _self = Self {
-            root: snapshot_directory
+            root: snapshot_directory,
         };
 
         let pointers_path = _self.get_pointers_path();
@@ -71,9 +84,13 @@ impl PersistentSnapshots {
                 &pointers_path,
                 serde_json::to_string(&SnapshotPointers {
                     snapshot: None,
-                    sha256: None
-                })?)?;
-            info!("Wrote to pointers file `{}`.", pointers_path.to_string_lossy());
+                    sha256: None,
+                })?,
+            )?;
+            info!(
+                "Wrote to pointers file `{}`.",
+                pointers_path.to_string_lossy()
+            );
         }
 
         Ok(_self)
@@ -86,7 +103,10 @@ impl PersistentSnapshots {
     fn get_snapshot_pointers(&self) -> ResultBtAny<SnapshotPointers> {
         let to_read = self.get_pointers_path();
         let as_json = &fs::read(&to_read)?;
-        info!("Read snapshot pointers file, `{}`.", to_read.to_string_lossy());
+        info!(
+            "Read snapshot pointers file, `{}`.",
+            to_read.to_string_lossy()
+        );
         Ok(serde_json::from_slice(as_json)?)
     }
 
@@ -116,18 +136,21 @@ impl PersistentSnapshots {
         let path = self.root.join(Self::SNAPSHOT_FILENAME);
         PathBuf::from(format!(
             "{}.{}",
-            path.to_string_lossy(), pointer_choice.get_extension()))
+            path.to_string_lossy(),
+            pointer_choice.get_extension()
+        ))
     }
 
     fn get_sha256_path(&self, pointer_choice: &PointerChoice) -> PathBuf {
         let path = self.root.join(Self::SHA512_FILENAME);
         PathBuf::from(format!(
             "{}.{}",
-            path.to_string_lossy(), pointer_choice.get_extension()))
+            path.to_string_lossy(),
+            pointer_choice.get_extension()
+        ))
     }
 
-    fn get_sha256_from(file_path: &Path, result_container: &mut Vec<u8>)
-    -> ResultBtAny<()> {
+    fn get_sha256_from(file_path: &Path, result_container: &mut Vec<u8>) -> ResultBtAny<()> {
         let sha256_digest = Sha256::digest(fs::read(&file_path)?);
         result_container.write_all(sha256_digest.as_slice())?;
         info!("Wrote SHA-256 to container.");
@@ -140,10 +163,10 @@ impl TfsSnapshots for PersistentSnapshots {
     fn open_safe(&self) -> ResultBt<File, OpenError> {
         let snapshot_pointers = self.get_snapshot_pointers()?;
         let to_snapshot = snapshot_pointers.get_snapshot()?;
-        
+
         let safe_snapshot = File::open(&to_snapshot)?;
         info!("Opened `{}`.", to_snapshot.to_string_lossy());
-        
+
         let mut computed_sha256 = vec![];
         Self::get_sha256_from(&to_snapshot, &mut computed_sha256)?;
         let to_sha256 = snapshot_pointers.get_sha256()?;
@@ -151,9 +174,12 @@ impl TfsSnapshots for PersistentSnapshots {
         info!("Read SHA-256 file `{}`.", to_sha256.to_string_lossy());
         let did_get_malformed = computed_sha256 != stored_sha256;
         if did_get_malformed {
-            return Err(OpenError::Checksum("Computed SHA-256 of safe \
-                snapshot is not equal to the stored SHA-256 of the snapshot.".into())
-                .into());
+            return Err(OpenError::Checksum(
+                "Computed SHA-256 of safe \
+                snapshot is not equal to the stored SHA-256 of the snapshot."
+                    .into(),
+            )
+            .into());
         }
 
         Ok(safe_snapshot)
@@ -184,21 +210,24 @@ impl TfsSnapshots for PersistentSnapshots {
 
         let to_pointers = PathBuf::from(format!(
             "{}.{}",
-            self.get_pointers_path()
-                .to_string_lossy(),
-            "staging"));
+            self.get_pointers_path().to_string_lossy(),
+            "staging"
+        ));
         fs::write(
             &to_pointers,
             serde_json::to_string(&SnapshotPointers {
                 snapshot: Some(to_snapshot),
-                sha256: Some(to_sha256)
-            })?)?;
+                sha256: Some(to_sha256),
+            })?,
+        )?;
         info!("Wrote to file `{}`.", &to_pointers.to_string_lossy());
 
         fs::rename(&to_pointers, self.get_pointers_path())?;
-        info!("Renamed `{}` to `{}`.",
+        info!(
+            "Renamed `{}` to `{}`.",
             to_pointers.to_string_lossy(),
-            self.get_pointers_path().to_string_lossy());
+            self.get_pointers_path().to_string_lossy()
+        );
         Ok(())
     }
 }
@@ -206,7 +235,7 @@ impl TfsSnapshots for PersistentSnapshots {
 #[derive(Serialize, Deserialize)]
 struct SnapshotPointers {
     snapshot: Option<PathBuf>,
-    sha256: Option<PathBuf>
+    sha256: Option<PathBuf>,
 }
 
 impl SnapshotPointers {
@@ -225,7 +254,7 @@ impl SnapshotPointers {
 
 enum PointerChoice {
     Blue,
-    Green
+    Green,
 }
 
 impl PointerChoice {
@@ -235,22 +264,31 @@ impl PointerChoice {
     fn get_extension(&self) -> &str {
         match self {
             PointerChoice::Blue => Self::BLUE_EXTENSION,
-            PointerChoice::Green => Self::GREEN_EXTENSION
+            PointerChoice::Green => Self::GREEN_EXTENSION,
         }
     }
 
     fn switch_extension(path: &mut PathBuf) -> ResultBtAny<()> {
-        let other_extension = match path.extension()
+        let other_extension = match path
+            .extension()
             .map(|extension| extension.to_str().unwrap_or(""))
         {
             Some(PointerChoice::BLUE_EXTENSION) => PointerChoice::Green,
             Some(PointerChoice::GREEN_EXTENSION) => PointerChoice::Blue,
-            None => return Err(format!(
-                "Can't switch path w/o extension `{}`.",
-                path.to_string_lossy()).into()),
-            Some(_) => return Err(format!(
-                "Can't switch path's `{}` extension.",
-                path.to_string_lossy()).into())
+            None => {
+                return Err(format!(
+                    "Can't switch path w/o extension `{}`.",
+                    path.to_string_lossy()
+                )
+                .into());
+            }
+            Some(_) => {
+                return Err(format!(
+                    "Can't switch path's `{}` extension.",
+                    path.to_string_lossy()
+                )
+                .into());
+            }
         };
 
         path.set_extension(other_extension.get_extension());
@@ -266,8 +304,7 @@ pub struct StubSnapshots;
 #[cfg(test)]
 impl TfsSnapshots for StubSnapshots {
     fn open_safe(&self) -> ResultBt<File, OpenError> {
-        return Err(OpenError::Checksum("No actual file for stub.".into())
-            .into());
+        return Err(OpenError::Checksum("No actual file for stub.".into()).into());
     }
 
     fn create_staging(&self) -> ResultBtAny<File> {

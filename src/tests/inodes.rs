@@ -1,4 +1,7 @@
-use crate::{errors::ResultBtAny, inodes::{FileInode, NamespaceInode, TagInode}};
+use crate::{
+    errors::ResultBtAny,
+    inodes::{FileInode, NamespaceInode, TagInode},
+};
 
 #[test]
 fn creating_file_inodes() -> ResultBtAny<()> {
@@ -12,10 +15,8 @@ fn creating_file_inodes() -> ResultBtAny<()> {
     assert_eq!(file_inode.get_id(), 9);
 
     let expectation = "Needs to be remainder 0 after mod 3.";
-    FileInode::try_from(4)
-        .expect_err(expectation);
-    FileInode::try_from(5)
-        .expect_err(expectation);
+    FileInode::try_from(4).expect_err(expectation);
+    FileInode::try_from(5).expect_err(expectation);
 
     Ok(())
 }
@@ -32,10 +33,8 @@ fn creating_tag_inodes() -> ResultBtAny<()> {
     assert_eq!(tag_inode.get_id(), 10);
 
     let expectation = "Needs to be remainder 1 after mod 3.";
-    TagInode::try_from(5)
-        .expect_err(expectation);
-    TagInode::try_from(6)
-        .expect_err(expectation);
+    TagInode::try_from(5).expect_err(expectation);
+    TagInode::try_from(6).expect_err(expectation);
 
     Ok(())
 }
@@ -52,10 +51,8 @@ fn creating_namespace_inodes_() -> ResultBtAny<()> {
     assert_eq!(namespace_inode.get_id(), 11);
 
     let expectation = "Needs to be remainder 2 after mod 3.";
-    NamespaceInode::try_from(6)
-        .expect_err(expectation);
-    NamespaceInode::try_from(7)
-        .expect_err(expectation);
+    NamespaceInode::try_from(6).expect_err(expectation);
+    NamespaceInode::try_from(7).expect_err(expectation);
 
     Ok(())
 }

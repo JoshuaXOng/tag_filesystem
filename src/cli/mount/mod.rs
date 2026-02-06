@@ -5,14 +5,21 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::{cli::{mount::{plain::PlainParameters, systemd::SystemdParamereters},
-    ProgramParameters}, errors::ResultBtAny, tracing::setup_normal_tracing, wrappers::PathExt};
+use crate::{
+    cli::{
+        ProgramParameters,
+        mount::{plain::PlainParameters, systemd::SystemdParamereters},
+    },
+    errors::ResultBtAny,
+    tracing::setup_normal_tracing,
+    wrappers::PathExt,
+};
 
 #[derive(Parser, Debug)]
 pub struct MountParameters {
     pub mount_path: PathBuf,
     #[command(subcommand)]
-    pub subcommand: MountSubcommand
+    pub subcommand: MountSubcommand,
 }
 
 impl MountParameters {
@@ -20,10 +27,12 @@ impl MountParameters {
         setup_normal_tracing(self.mount_path.__strip_prefix("/"));
 
         match &self.subcommand {
-            MountSubcommand::Systemd(systemd_argument) =>
-                systemd_argument.run(program_arguments, &self),
-            MountSubcommand::Plain(plain_arguments) =>
+            MountSubcommand::Systemd(systemd_argument) => {
+                systemd_argument.run(program_arguments, &self)
+            }
+            MountSubcommand::Plain(plain_arguments) => {
                 plain_arguments.run(program_arguments, &self)
+            }
         }
     }
 }
@@ -31,5 +40,5 @@ impl MountParameters {
 #[derive(Subcommand, Debug)]
 pub enum MountSubcommand {
     Plain(PlainParameters),
-    Systemd(SystemdParamereters)
+    Systemd(SystemdParamereters),
 }

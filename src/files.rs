@@ -1,10 +1,18 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    time::SystemTime,
+};
 
 use bon::Builder;
 use fuser::FileType;
 
-use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::{FileInode, TagInodes},
-    wrappers::{write_btreeset, write_iter, VecWrapper}};
+use crate::{
+    entries::TfsEntry,
+    errors::ResultBtAny,
+    inodes::{FileInode, TagInodes},
+    wrappers::{VecWrapper, write_btreeset, write_iter},
+};
 
 pub const DEFAULT_FILE_PERMISSIONS: u16 = 0o666;
 
@@ -94,8 +102,8 @@ static EMPTY_FILES_VEC: Vec<FileInode> = Vec::new();
 #[derive(Debug, Clone)]
 pub struct IndexedFiles {
     files: ByInode,
-    by_tags: ByTags, 
-    by_name_and_tags: ByNameAndTags
+    by_tags: ByTags,
+    by_name_and_tags: ByNameAndTags,
 }
 
 impl IndexedFiles {
@@ -113,7 +121,8 @@ impl IndexedFiles {
 
     pub fn get_by_inode_id(&self, inode_id: u64) -> ResultBtAny<&TfsFile> {
         let file_inode = FileInode::try_from(inode_id)?;
-        self.files.get(&file_inode)
+        self.files
+            .get(&file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist.").into())
     }
 
@@ -122,7 +131,8 @@ impl IndexedFiles {
     }
 
     pub fn get_by_tags(&self, file_tags: &TagInodes) -> impl Iterator<Item = &TfsFile> {
-        self.by_tags.get(file_tags)
+        self.by_tags
+            .get(file_tags)
             .unwrap_or(&EMPTY_FILES_VEC)
             .iter()
             .filter_map(|inode| self.files.get(inode))
@@ -131,8 +141,7 @@ impl IndexedFiles {
     // TODO: For other methods return Iterator instead of Vec and HashSet.
     // For this method, wait for `get_many_mut`.
     fn get_by_tags_mut(&mut self, file_tags: &TagInodes) -> Vec<&mut TfsFile> {
-        let matching_inodes = self.by_tags.get(file_tags)
-            .unwrap_or(&EMPTY_FILES_VEC);
+        let matching_inodes = self.by_tags.get(file_tags).unwrap_or(&EMPTY_FILES_VEC);
 
         let mut matching_files = Vec::new();
         for (inode, file) in &mut self.files {
@@ -143,19 +152,21 @@ impl IndexedFiles {
         matching_files
     }
 
-    pub fn get_by_name_and_tags(&self, file_name: &str, file_tags: &TagInodes)
-        -> Option<&TfsFile>
-    {
-        let file_inode = self.by_name_and_tags
+    pub fn get_by_name_and_tags(&self, file_name: &str, file_tags: &TagInodes) -> Option<&TfsFile> {
+        let file_inode = self
+            .by_name_and_tags
             .get(&(file_name.to_string(), file_tags.clone()))?;
 
         self.files.get(file_inode)
     }
 
-    fn get_by_name_and_tags_mut(&mut self, file_name: &str, file_tags: &TagInodes)
-        -> Option<&mut TfsFile>
-    {
-        let file_inode = self.by_name_and_tags
+    fn get_by_name_and_tags_mut(
+        &mut self,
+        file_name: &str,
+        file_tags: &TagInodes,
+    ) -> Option<&mut TfsFile> {
+        let file_inode = self
+            .by_name_and_tags
             .get(&(file_name.to_string(), file_tags.clone()))?;
 
         self.files.get_mut(file_inode)
@@ -170,16 +181,17 @@ impl IndexedFiles {
     }
 
     pub fn get_tag_sets(&self) -> impl Iterator<Item = &TagInodes> {
-        self.by_tags.iter()
+        self.by_tags
+            .iter()
             .filter(|(_, files)| !files.is_empty())
             .map(|(tags, _)| tags)
     }
 
     pub fn get_neighbour_tag_inodes(&self, current_tags: &TagInodes) -> TagInodes {
-        let mut neighbour_tags = TagInodes::new(); 
+        let mut neighbour_tags = TagInodes::new();
         for tag_set in self.get_tag_sets() {
             if !tag_set.0.is_superset(&current_tags.0) {
-                continue
+                continue;
             }
             neighbour_tags.0.extend(&tag_set.0 - &current_tags.0);
         }
@@ -196,69 +208,85 @@ impl IndexedFiles {
     }
 
     fn will_collide(&self, check_for: &TfsFile) -> ResultBtAny<()> {
-        Self::_will_collide(&self.files, &self.by_tags, &self.by_name_and_tags,
-            &check_for.name, &check_for.inode, &check_for.tags)
+        Self::_will_collide(
+            &self.files,
+            &self.by_tags,
+            &self.by_name_and_tags,
+            &check_for.name,
+            &check_for.inode,
+            &check_for.tags,
+        )
     }
 
     fn _will_collide(
-        files: &ByInode, by_tags: &ByTags, by_name_and_tags: &ByNameAndTags,
-        name: &str, inode: &FileInode, tags: &TagInodes)
-        -> ResultBtAny<()>
-    {
+        files: &ByInode,
+        by_tags: &ByTags,
+        by_name_and_tags: &ByNameAndTags,
+        name: &str,
+        inode: &FileInode,
+        tags: &TagInodes,
+    ) -> ResultBtAny<()> {
         let does_inode = files.contains_key(&inode);
-        let do_tags = by_tags.get(&tags)
+        let do_tags = by_tags
+            .get(&tags)
             .map(|inodes| inodes.contains(&inode))
             .unwrap_or(false);
-        let does_name_and_tags = by_name_and_tags
-            .contains_key(&(name.to_string(), tags.clone()));
+        let does_name_and_tags = by_name_and_tags.contains_key(&(name.to_string(), tags.clone()));
         if does_inode || do_tags || does_name_and_tags {
-            Err(format!("Collisions on inode, tags, name and tags: {}, {}, {}",
-                does_inode, do_tags, does_name_and_tags))?;
+            Err(format!(
+                "Collisions on inode, tags, name and tags: {}, {}, {}",
+                does_inode, do_tags, does_name_and_tags
+            ))?;
         }
         Ok(())
     }
 
-    pub fn do_by_inode<T>(&mut self, file_inode: &FileInode,
-        to_do: impl FnOnce(FileUpdate) -> T)
-        -> ResultBtAny<T>
-    {
+    pub fn do_by_inode<T>(
+        &mut self,
+        file_inode: &FileInode,
+        to_do: impl FnOnce(FileUpdate) -> T,
+    ) -> ResultBtAny<T> {
         self.do_or_rollback(file_inode, to_do)
     }
 
-    pub fn do_by_tags<T>(&mut self,
+    pub fn do_by_tags<T>(
+        &mut self,
         file_tags: &TagInodes,
-        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T)
-        -> ResultBtAny<T>
-    {
-        let target_inodes = self.by_tags.get(file_tags)
+        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T,
+    ) -> ResultBtAny<T> {
+        let target_inodes = self
+            .by_tags
+            .get(file_tags)
             .ok_or(format!("No files with tags `{file_tags}`."))?
             .clone();
-        let to_return = self.do_or_complete_rollback_bulk(&target_inodes.into_iter()
-            .collect(), to_do)?;
+        let to_return =
+            self.do_or_complete_rollback_bulk(&target_inodes.into_iter().collect(), to_do)?;
         Ok(to_return)
     }
 
-    pub fn do_by_name_and_tags<T>(&mut self,
+    pub fn do_by_name_and_tags<T>(
+        &mut self,
         file_name: &str,
         file_tags: &TagInodes,
-        to_do: impl FnOnce(FileUpdate) -> T)
-        -> ResultBtAny<T>
-    {
-        let target_inode = *self.by_name_and_tags.get(&(
-            file_name.to_string(),
-            file_tags.clone()))
+        to_do: impl FnOnce(FileUpdate) -> T,
+    ) -> ResultBtAny<T> {
+        let target_inode = *self
+            .by_name_and_tags
+            .get(&(file_name.to_string(), file_tags.clone()))
             .ok_or(format!(
                 "No file with name and tags: `{}` and `{}`.",
-                file_name, file_tags))?;
+                file_name, file_tags
+            ))?;
         self.do_or_rollback(&target_inode, to_do)
     }
 
-    fn do_or_rollback<T>(&mut self,
+    fn do_or_rollback<T>(
+        &mut self,
         file_inode: &FileInode,
-        to_do: impl FnOnce(FileUpdate) -> T)
-        -> ResultBtAny<T>
-    {
-        let mut target_file = self.remove_by_inode(file_inode)
+        to_do: impl FnOnce(FileUpdate) -> T,
+    ) -> ResultBtAny<T> {
+        let mut target_file = self
+            .remove_by_inode(file_inode)
             .ok_or(format!("File with inode `{file_inode}` does not exist."))?;
         let callback_return = to_do(FileUpdate {
             files: &self.files,
@@ -272,69 +300,79 @@ impl IndexedFiles {
             when_accessed: &mut target_file.when_accessed,
             when_modified: &mut target_file.when_modified,
             when_changed: &mut target_file.when_changed,
-            tags: &mut target_file.tags
+            tags: &mut target_file.tags,
         });
         self.add(target_file)?;
         Ok(callback_return)
     }
 
-    fn do_or_partial_rollback_bulk<T>(&mut self,
+    fn do_or_partial_rollback_bulk<T>(
+        &mut self,
         file_inodes: &HashSet<FileInode>,
-        mut to_do: impl FnMut(FileUpdate) -> T)
-        -> ResultBtAny<HashMap<FileInode, T>>
-    {
-        let dont_exist = file_inodes.iter()
-            .filter(|inode| self.get_by_inode(inode)
-                .is_none())
+        mut to_do: impl FnMut(FileUpdate) -> T,
+    ) -> ResultBtAny<HashMap<FileInode, T>> {
+        let dont_exist = file_inodes
+            .iter()
+            .filter(|inode| self.get_by_inode(inode).is_none())
             .collect::<Vec<_>>();
         if !dont_exist.is_empty() {
-            return Err(format!("Some inodes `{}` in the argument do not exist.",
-                VecWrapper(dont_exist)).into());
+            return Err(format!(
+                "Some inodes `{}` in the argument do not exist.",
+                VecWrapper(dont_exist)
+            )
+            .into());
         }
 
         let mut callback_returns = HashMap::new();
         for file_inode in file_inodes {
-            callback_returns.insert(*file_inode,
-                self.do_or_rollback(file_inode, &mut to_do)?);
+            callback_returns.insert(*file_inode, self.do_or_rollback(file_inode, &mut to_do)?);
         }
 
         Ok(callback_returns)
     }
 
-    fn do_or_complete_rollback_bulk<T>(&mut self,
+    fn do_or_complete_rollback_bulk<T>(
+        &mut self,
         file_inodes: &HashSet<FileInode>,
-        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T)
-        -> ResultBtAny<T>
-    {
-        let dont_exist = file_inodes.iter()
-            .filter(|inode| self.get_by_inode(inode)
-                .is_none())
+        to_do: impl FnOnce(&mut HashSet<TfsFile>) -> T,
+    ) -> ResultBtAny<T> {
+        let dont_exist = file_inodes
+            .iter()
+            .filter(|inode| self.get_by_inode(inode).is_none())
             .collect::<Vec<_>>();
         if !dont_exist.is_empty() {
-            return Err(format!("Some inodes `{}` in the argument do not exist.",
-                VecWrapper(dont_exist)).into());
+            return Err(format!(
+                "Some inodes `{}` in the argument do not exist.",
+                VecWrapper(dont_exist)
+            )
+            .into());
         }
 
-        let mut for_modification = HashSet::new(); 
+        let mut for_modification = HashSet::new();
         for file_inode in file_inodes {
-            for_modification.insert(self.remove_by_inode(file_inode)
-                .expect("To have checked all inodes correspond with an \
-                    existing file."));
+            for_modification.insert(self.remove_by_inode(file_inode).expect(
+                "To have checked all inodes correspond with an \
+                    existing file.",
+            ));
         }
-        let original_files = for_modification.clone(); 
+        let original_files = for_modification.clone();
         let callback_return = to_do(&mut for_modification);
 
         let mut is_any_conflicts = false;
         let mut modified_files = IndexedFiles::new();
         for modified_file in for_modification {
-            if self.will_collide(&modified_file).is_err() 
-            || modified_files.add(modified_file).is_err() {
+            if self.will_collide(&modified_file).is_err()
+                || modified_files.add(modified_file).is_err()
+            {
                 is_any_conflicts = true;
             }
         }
 
-        let nonconflicting_files = if is_any_conflicts { original_files }
-        else { modified_files.files.into_values().collect() };
+        let nonconflicting_files = if is_any_conflicts {
+            original_files
+        } else {
+            modified_files.files.into_values().collect()
+        };
         for nonconflicting_file in nonconflicting_files {
             self.add_unchecked(nonconflicting_file);
         }
@@ -354,11 +392,11 @@ impl IndexedFiles {
 
         _ = self.files.insert(inode, to_add);
         _ = self.by_name_and_tags.insert((name, tags.clone()), inode);
-        self.by_tags.entry(tags)
-            .or_insert(vec![])
-            .push(inode);
+        self.by_tags.entry(tags).or_insert(vec![]).push(inode);
 
-        self.files.get(&inode).expect("To have just inserted with inode prior.")
+        self.files
+            .get(&inode)
+            .expect("To have just inserted with inode prior.")
     }
 
     pub fn remove_by_inode(&mut self, file_inode: &FileInode) -> Option<TfsFile> {
@@ -368,24 +406,29 @@ impl IndexedFiles {
             inodes.retain(|inode| inode != file_inode);
         }
 
-        _ = self.by_name_and_tags
-            .remove(&(to_remove.name.clone(), to_remove.tags.clone())); 
+        _ = self
+            .by_name_and_tags
+            .remove(&(to_remove.name.clone(), to_remove.tags.clone()));
 
         Some(to_remove)
     }
 
     pub fn remove_by_tags(&mut self, file_tags: &TagInodes) -> impl Iterator<Item = TfsFile> {
-        self.by_tags.get(file_tags)
+        self.by_tags
+            .get(file_tags)
             .unwrap_or(&EMPTY_FILES_VEC)
             .clone()
             .into_iter()
             .filter_map(|inode| self.remove_by_inode(&inode))
     }
 
-    pub fn remove_by_name_and_tags(&mut self, file_name: &str, file_tags: &TagInodes)
-        -> Option<TfsFile>
-    {
-        let to_remove = self.by_name_and_tags
+    pub fn remove_by_name_and_tags(
+        &mut self,
+        file_name: &str,
+        file_tags: &TagInodes,
+    ) -> Option<TfsFile> {
+        let to_remove = self
+            .by_name_and_tags
             .get(&(file_name.to_string(), file_tags.clone()))?
             .clone();
         self.remove_by_inode(&to_remove)
@@ -400,8 +443,8 @@ impl Display for IndexedFiles {
 
 pub struct FileUpdate<'a, 'b> {
     files: &'a ByInode,
-    by_tags: &'a ByTags, 
-    by_name_and_tags: &'a ByNameAndTags, 
+    by_tags: &'a ByTags,
+    by_name_and_tags: &'a ByNameAndTags,
 
     name: &'b mut String,
     inode: &'b mut FileInode,
@@ -415,17 +458,15 @@ pub struct FileUpdate<'a, 'b> {
 }
 
 macro_rules! try_set {
-    ($self: ident, $field: ident, $candidate: ident) => {
-        {
-            let original = $self.$field.clone();
-            *$self.$field = $candidate;
-            if let Err(e) = $self.will_collide() {
-                *$self.$field = original;
-                return Err(e);
-            }
-            Ok(())
+    ($self: ident, $field: ident, $candidate: ident) => {{
+        let original = $self.$field.clone();
+        *$self.$field = $candidate;
+        if let Err(e) = $self.will_collide() {
+            *$self.$field = original;
+            return Err(e);
         }
-    }
+        Ok(())
+    }};
 }
 
 impl<'a, 'b> FileUpdate<'a, 'b> {
@@ -442,8 +483,14 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
     }
 
     fn will_collide(&self) -> ResultBtAny<()> {
-        IndexedFiles::_will_collide(&self.files, &self.by_tags, &self.by_name_and_tags,
-            &self.name, &self.inode, &self.tags)
+        IndexedFiles::_will_collide(
+            &self.files,
+            &self.by_tags,
+            &self.by_name_and_tags,
+            &self.name,
+            &self.inode,
+            &self.tags,
+        )
     }
 }
 
@@ -453,10 +500,10 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
 // Can't selectively private a subset of a nested struct's fields.
 // So, make it less effort to declare the fields that should be made
 // public.
-// 
+//
 // Where `file` would be a field on the struct that is to be projected.
 // ```impl<'a> FileUpdate<'a> {
-//     project!(file, { 
+//     project!(file, {
 //         name[RO]: String[str],
 //         inode[RO]: FileInode,
 //         tags[RO]: TagInodes,
@@ -476,5 +523,5 @@ impl<'a, 'b> FileUpdate<'a, 'b> {
 //     fn get_something_2_mut(&mut self) -> &mut str { &mut self.file.something_2 }
 //     fn set_something_2(&mut self, something_2: String) { self.file.something_2 = something_2; }
 // }```
-// 
+//
 // If any functions, just use `delegate` crate instead.

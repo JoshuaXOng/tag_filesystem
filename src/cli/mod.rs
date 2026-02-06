@@ -3,16 +3,19 @@ pub mod tags;
 
 use std::fs::{self, create_dir_all};
 
+use crate::{
+    cli::{mount::MountParameters, tags::TagsParameters},
+    errors::ResultBtAny,
+    path::get_configuration_directory,
+};
 use clap::{Parser, Subcommand};
-use crate::{cli::{mount::MountParameters, tags::TagsParameters}, errors::ResultBtAny,
-    path::get_configuration_directory};
 
 #[derive(Parser, Debug)]
 pub struct ProgramParameters {
     #[arg(short, long)]
     pub dry: bool,
     #[command(subcommand)]
-    pub subcommand: ProgramSubcommands 
+    pub subcommand: ProgramSubcommands,
 }
 
 impl ProgramParameters {
@@ -26,7 +29,7 @@ impl ProgramParameters {
 
         match &self.subcommand {
             ProgramSubcommands::Mount(mount_arguments) => mount_arguments.run(self),
-            ProgramSubcommands::Tags(tag_arguments) => tag_arguments.run(self)
+            ProgramSubcommands::Tags(tag_arguments) => tag_arguments.run(self),
         }
     }
 }
@@ -34,5 +37,5 @@ impl ProgramParameters {
 #[derive(Subcommand, Debug)]
 pub enum ProgramSubcommands {
     Mount(MountParameters),
-    Tags(TagsParameters)
+    Tags(TagsParameters),
 }

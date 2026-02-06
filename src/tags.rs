@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, time::SystemTime};
 
-use bon::{builder, Builder};
+use bon::{Builder, builder};
 use fuser::FileType;
 
 use crate::{entries::TfsEntry, errors::ResultBtAny, inodes::TagInode, wrappers::write_iter};
@@ -23,7 +23,7 @@ pub struct TfsTag {
     #[builder(default = SystemTime::now())]
     pub when_changed: SystemTime,
     #[builder(default = SystemTime::now())]
-    pub when_created: SystemTime
+    pub when_created: SystemTime,
 }
 
 impl TfsEntry for TfsTag {
@@ -80,7 +80,7 @@ type ByName = HashMap<String, TagInode>;
 #[derive(Debug)]
 pub struct IndexedTags {
     tags: ByInode,
-    by_name: ByName
+    by_name: ByName,
 }
 
 impl IndexedTags {
@@ -97,7 +97,8 @@ impl IndexedTags {
 
     pub fn get_by_inode_id(&self, inode_id: u64) -> ResultBtAny<&TfsTag> {
         let tag_inode = TagInode::try_from(inode_id)?;
-        self.tags.get(&tag_inode)
+        self.tags
+            .get(&tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist.").into())
     }
 
@@ -106,12 +107,14 @@ impl IndexedTags {
     }
 
     pub fn get_by_name(&self, tag_name: &str) -> Option<&TfsTag> {
-        self.by_name.get(tag_name)
+        self.by_name
+            .get(tag_name)
             .and_then(|inode| self.tags.get(inode))
     }
-    
+
     fn get_by_name_mut(&mut self, tag_name: &str) -> Option<&mut TfsTag> {
-        self.by_name.get(tag_name)
+        self.by_name
+            .get(tag_name)
             .and_then(|inode| self.tags.get_mut(inode))
     }
 
@@ -132,22 +135,33 @@ impl IndexedTags {
         TagInode::try_from_free_inodes(inodes_inuse)
     }
 
-    pub fn do_by_inode<T>(&mut self, tag_inode: &TagInode, to_do: impl FnOnce(TagUpdate) -> T)
-    -> ResultBtAny<T> {
+    pub fn do_by_inode<T>(
+        &mut self,
+        tag_inode: &TagInode,
+        to_do: impl FnOnce(TagUpdate) -> T,
+    ) -> ResultBtAny<T> {
         self.do_or_rollback(tag_inode, to_do)
     }
 
-    pub fn do_by_name<T>( &mut self, tag_name: &str, to_do: impl FnOnce(TagUpdate) -> T)
-    -> ResultBtAny<T> {
-        let target_inode = *self.by_name.get(tag_name)
-            .ok_or(format!(
-                "Tag with name `{tag_name}` does not exist."))?;
+    pub fn do_by_name<T>(
+        &mut self,
+        tag_name: &str,
+        to_do: impl FnOnce(TagUpdate) -> T,
+    ) -> ResultBtAny<T> {
+        let target_inode = *self
+            .by_name
+            .get(tag_name)
+            .ok_or(format!("Tag with name `{tag_name}` does not exist."))?;
         self.do_or_rollback(&target_inode, to_do)
     }
 
-    fn do_or_rollback<T>(&mut self, tag_inode: &TagInode, to_do: impl FnOnce(TagUpdate) -> T)
-    -> ResultBtAny<T> {
-        let mut target_tag = self.remove_by_inode(tag_inode)
+    fn do_or_rollback<T>(
+        &mut self,
+        tag_inode: &TagInode,
+        to_do: impl FnOnce(TagUpdate) -> T,
+    ) -> ResultBtAny<T> {
+        let mut target_tag = self
+            .remove_by_inode(tag_inode)
             .ok_or(format!("Tag with inode `{tag_inode}` does not exist."))?;
         let callback_return = to_do(TagUpdate {
             tags: &self.tags,
@@ -169,13 +183,19 @@ impl IndexedTags {
         Self::_will_collide(&self.tags, &self.by_name, &check_for.inode, &check_for.name)
     }
 
-    fn _will_collide(tags: &ByInode, by_name: &ByName, inode: &TagInode, name: &str)
-    -> ResultBtAny<()> {
+    fn _will_collide(
+        tags: &ByInode,
+        by_name: &ByName,
+        inode: &TagInode,
+        name: &str,
+    ) -> ResultBtAny<()> {
         let does_inode = tags.contains_key(&inode);
         let does_name = by_name.contains_key(name);
         if does_inode || does_name {
-            Err(format!("Collisions on inode and name: {}, {}",
-                does_inode, does_name))?;
+            Err(format!(
+                "Collisions on inode and name: {}, {}",
+                does_inode, does_name
+            ))?;
         }
         Ok(())
     }
@@ -184,7 +204,7 @@ impl IndexedTags {
         self.will_collide(&to_add)?;
         Ok(self.add_unchecked(to_add))
     }
-    
+
     fn add_unchecked(&mut self, to_add: TfsTag) -> &TfsTag {
         let inode = to_add.inode;
         let name = to_add.name.clone();
@@ -192,7 +212,8 @@ impl IndexedTags {
         _ = self.tags.insert(inode, to_add);
         _ = self.by_name.insert(name, inode);
 
-        self.tags.get(&inode)
+        self.tags
+            .get(&inode)
             .expect("To have just inserted with inode prior.")
     }
 
@@ -209,8 +230,7 @@ impl IndexedTags {
 }
 
 impl Display for IndexedTags {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>)
-    -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write_iter(f, ('[', ']'), self.tags.values())
     }
 }
@@ -230,17 +250,15 @@ pub struct TagUpdate<'a, 'b> {
 }
 
 macro_rules! try_set {
-    ($self: ident, $field: ident, $candidate: ident) => {
-        {
-            let original = $self.$field.clone();
-            *$self.$field = $candidate;
-            if let Err(e) = $self.will_collide() {
-                *$self.$field = original;
-                return Err(e);
-            }
-            Ok(())
+    ($self: ident, $field: ident, $candidate: ident) => {{
+        let original = $self.$field.clone();
+        *$self.$field = $candidate;
+        if let Err(e) = $self.will_collide() {
+            *$self.$field = original;
+            return Err(e);
         }
-    }
+        Ok(())
+    }};
 }
 
 impl<'a, 'b> TagUpdate<'a, 'b> {

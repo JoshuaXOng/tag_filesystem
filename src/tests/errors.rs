@@ -1,8 +1,12 @@
-use crate::{errors::{AnyError, ResultBtAny}, return_errors, unwrap_or, WithBacktrace};
+use crate::{
+    WithBacktrace,
+    errors::{AnyError, ResultBtAny},
+    return_errors, unwrap_or,
+};
 
 #[test]
 fn executing_unwrap_or_on_result() {
-    let result: ResultBtAny<_>  = Ok(1);
+    let result: ResultBtAny<_> = Ok(1);
     let ok = unwrap_or!(result, e, {
         assert!(false);
         return;
@@ -38,12 +42,13 @@ fn executing_unwrap_or_on_option() {
 #[test]
 fn running_return_errors() -> ResultBtAny<()> {
     let e = running_return_errors_with_errrors_as_fraction().unwrap_err();
-    assert_eq!(e.to_string(), 
-        "Not all checks passed. Error 1. Error 3.");
+    assert_eq!(e.to_string(), "Not all checks passed. Error 1. Error 3.");
 
     let e = running_return_errors_with_all_errrors().unwrap_err();
-    assert_eq!(e.to_string(), 
-        "Not all checks passed. Error 1. Error 2. Error 3.");
+    assert_eq!(
+        e.to_string(),
+        "Not all checks passed. Error 1. Error 2. Error 3."
+    );
 
     let mut string = String::new();
     running_return_errors_with_no_errrors(&mut string)?;

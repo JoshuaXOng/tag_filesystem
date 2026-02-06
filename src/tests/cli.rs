@@ -4,8 +4,15 @@ use askama::Template;
 use clap::Parser;
 use tempfile::tempdir;
 
-use crate::{cli::{mount::systemd::{ServiceTemplate, SystemdParamereters},
-    tags::change::{ChangeParameters, ChangeTag}}, errors::ResultBtAny, path::PathBufExt, tests::tracing::setup_tracing};
+use crate::{
+    cli::{
+        mount::systemd::{ServiceTemplate, SystemdParamereters},
+        tags::change::{ChangeParameters, ChangeTag},
+    },
+    errors::ResultBtAny,
+    path::PathBufExt,
+    tests::tracing::setup_tracing,
+};
 
 #[test]
 fn parsing_changing_tags() {
@@ -14,51 +21,44 @@ fn parsing_changing_tags() {
         change_arguments,
         ChangeParameters {
             are_negated: false,
-            tags: vec![ChangeTag::builder()
-                .name("tag_1")
-                .build()]
-        });
+            tags: vec![ChangeTag::builder().name("tag_1").build()]
+        }
+    );
 
     let change_arguments = ChangeParameters::parse_from(["ct", "~tag_1"]);
     assert_eq!(
         change_arguments,
         ChangeParameters {
             are_negated: false,
-            tags: vec![ChangeTag::builder()
-                .is_negated(true)
-                .name("tag_1")
-                .build()]
-        });
+            tags: vec![ChangeTag::builder().is_negated(true).name("tag_1").build()]
+        }
+    );
 
     let change_arguments = ChangeParameters::parse_from(["ct", "-n", "tag_1", "tag_2"]);
     assert_eq!(
         change_arguments,
         ChangeParameters {
             are_negated: true,
-            tags: vec![ChangeTag::builder()
-                .name("tag_1")
-                .build(),
-                ChangeTag::builder()
-                    .name("tag_2")
-                    .build()]
-        });
+            tags: vec![
+                ChangeTag::builder().name("tag_1").build(),
+                ChangeTag::builder().name("tag_2").build()
+            ]
+        }
+    );
 
     let change_arguments = ChangeParameters::parse_from(["ct", "-n", "tag_1", "~tag_2"]);
     assert_eq!(
         change_arguments,
         ChangeParameters {
             are_negated: true,
-            tags: vec![ChangeTag::builder()
-                .name("tag_1")
-                .build(),
-                ChangeTag::builder()
-                    .is_negated(true)
-                    .name("tag_2")
-                    .build()]
-        });
+            tags: vec![
+                ChangeTag::builder().name("tag_1").build(),
+                ChangeTag::builder().is_negated(true).name("tag_2").build()
+            ]
+        }
+    );
 
-    let mut path = PathBuf::new()
-        .join("/tmp/ct/{ tag_8, tag_2 }");
+    let mut path = PathBuf::new().join("/tmp/ct/{ tag_8, tag_2 }");
     println!("{:?}", path);
 
     let tags = change_arguments.tags;
@@ -72,11 +72,12 @@ fn systemd_unit_file_rendering() -> ResultBtAny<()> {
 
     let temporary_directory = tempdir()?;
     let mount_path = temporary_directory.path().to_path_buf();
-    let service_configuration = ServiceTemplate::try_new(&mount_path)?
-        .render()?;
-    assert_eq!(service_configuration, 
-        format!(indoc::indoc!(
-            "[Unit]
+    let service_configuration = ServiceTemplate::try_new(&mount_path)?.render()?;
+    assert_eq!(
+        service_configuration,
+        format!(
+            indoc::indoc!(
+                "[Unit]
             Description=Tag Filesystem
             [Service]
             Type=simple
@@ -88,12 +89,12 @@ fn systemd_unit_file_rendering() -> ResultBtAny<()> {
             
             DeviceAllow=/dev/fuse rw
             [Install]
-            WantedBy=multi-user.target"), 
-            to_binary=canonicalize(current_exe()?)?
-                .display()
-                .to_string(),
-            mount_path=mount_path.display()
-                .to_string()));
+            WantedBy=multi-user.target"
+            ),
+            to_binary = canonicalize(current_exe()?)?.display().to_string(),
+            mount_path = mount_path.display().to_string()
+        )
+    );
 
     Ok(())
 }

@@ -1,8 +1,12 @@
 use std::io::Cursor;
 
-use crate::{errors::ResultBtAny, files::TfsFile, filesystem::new_root_fuser_,
-    persistence::{deserialize_tag_filesystem, serialize_tag_filesystem, PersistedTfs},
-    tags::TfsTag};
+use crate::{
+    errors::ResultBtAny,
+    files::TfsFile,
+    filesystem::new_root_fuser_,
+    persistence::{PersistedTfs, deserialize_tag_filesystem, serialize_tag_filesystem},
+    tags::TfsTag,
+};
 
 #[test]
 fn running_tag_filesystem_serdeialization() -> ResultBtAny<()> {
@@ -23,8 +27,8 @@ fn running_tag_filesystem_serdeialization() -> ResultBtAny<()> {
                 .inode(6.try_into()?)
                 .owner(1000)
                 .group(1000)
-                .build()
-        ], 
+                .build(),
+        ],
         vec![
             &TfsTag::builder()
                 .name(String::from("test_tag_a"))
@@ -43,10 +47,14 @@ fn running_tag_filesystem_serdeialization() -> ResultBtAny<()> {
                 .inode(10.try_into()?)
                 .owner(1000)
                 .group(1000)
-                .build()
-        ]);
-    let PersistedTfs { root: _root_fuser, files: recovered_files, tags: recovered_tags }
-        = deserialize_tag_filesystem(Cursor::new(persistence_location))?;
+                .build(),
+        ],
+    );
+    let PersistedTfs {
+        root: _root_fuser,
+        files: recovered_files,
+        tags: recovered_tags,
+    } = deserialize_tag_filesystem(Cursor::new(persistence_location))?;
     assert_eq!(root_fuser, _root_fuser);
     let (rf, rt) = (recovered_files, recovered_tags);
 

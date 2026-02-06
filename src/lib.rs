@@ -13,8 +13,6 @@ pub mod errors;
 pub mod files;
 pub mod filesystem;
 pub mod fuse;
-#[cfg(test)]
-mod tests;
 pub mod inodes;
 pub mod journal;
 pub mod namespaces;
@@ -24,6 +22,8 @@ pub mod persistence;
 pub mod snapshots;
 pub mod storage;
 pub mod tags;
+#[cfg(test)]
+mod tests;
 pub mod tracing;
 pub mod ttl;
 pub mod wrappers;

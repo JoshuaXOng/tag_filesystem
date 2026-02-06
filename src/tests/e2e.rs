@@ -1,13 +1,22 @@
-use std::{env::{current_dir, set_current_dir}, error::Error, ffi::{OsStr, OsString}, fs::{self,
-    rename, File, OpenOptions}, io::{stdout, Write}, path::PathBuf, process::{self, Command,
-    ExitStatus, Stdio}};
+use std::{
+    env::{current_dir, set_current_dir},
+    error::Error,
+    ffi::{OsStr, OsString},
+    fs::{self, File, OpenOptions, rename},
+    io::{Write, stdout},
+    path::PathBuf,
+    process::{self, Command, ExitStatus, Stdio},
+};
 
 use clap::Parser;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
-use crate::{errors::ResultBtAny, tests::{fixtures::with_tfs_mount, tracing::setup_tracing},
-    wrappers::VecWrapper};
+use crate::{
+    errors::ResultBtAny,
+    tests::{fixtures::with_tfs_mount, tracing::setup_tracing},
+    wrappers::VecWrapper,
+};
 
 #[test]
 fn listing_files_and_tags() -> ResultBtAny<()> {
@@ -19,49 +28,64 @@ fn listing_files_and_tags() -> ResultBtAny<()> {
             .arg(mount_directory.join("tag_2"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("touch").arg(mount_directory.join("file_1"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("touch").arg(mount_directory.join("{ tag_1 }").join("file_2"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_1 }").join("file_2"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("touch").arg(mount_directory.join("{ tag_1, tag_2 }").join("file_3"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_1, tag_2 }").join("file_3"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_1\ntag_1\ntag_2\n");
-        let output = cmd("ls").arg(mount_directory.join("{}"))
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory.join("{}")).run_and_log()?;
         assert_eq!(output, "file_1\ntag_1\ntag_2\n");
 
-        let output = cmd("ls").arg(mount_directory.join("file_1"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("file_1"))
             .run_and_log()?;
-        assert_eq!(output, mount_directory.join("file_1").to_string_lossy() + "\n");
+        assert_eq!(
+            output,
+            mount_directory.join("file_1").to_string_lossy() + "\n"
+        );
 
-        let output = cmd("ls").arg(mount_directory.join("tag_1"))
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory.join("tag_1")).run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_1 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_1 }"))
             .run_and_log()?;
         assert_eq!(output, "file_2\ntag_1\ntag_2\n");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_2 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_2 }"))
             .run_and_log()?;
         assert_eq!(output, "tag_1\ntag_2\n");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_1, tag_2 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_1, tag_2 }"))
             .run_and_log()?;
         assert_eq!(output, "file_3\ntag_1\ntag_2\n");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_1 }").join("file_2"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_1 }").join("file_2"))
             .run_and_log()?;
-        assert_eq!(output,
-            mount_directory.join("{ tag_1 }").join("file_2").to_string_lossy() + "\n");
+        assert_eq!(
+            output,
+            mount_directory
+                .join("{ tag_1 }")
+                .join("file_2")
+                .to_string_lossy()
+                + "\n"
+        );
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_1 }").join("tag_1"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_1 }").join("tag_1"))
             .run_and_log()?;
         assert_eq!(output, "");
 
@@ -82,15 +106,18 @@ fn listing_namespace_to_show_neighbour_tags() -> ResultBtAny<()> {
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("touch").arg(mount_directory.join("{ tag_1 }").join("file_1"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_1 }").join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("touch").arg(mount_directory.join("{ tag_1, tag_2 }").join("file_2"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_1, tag_2 }").join("file_2"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_1 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_1 }"))
             .run_and_log()?;
         assert_eq!(output, "file_1\ntag_1\ntag_2\n");
 
@@ -112,8 +139,7 @@ fn creating_files() -> ResultBtAny<()> {
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_1\nfile_2\nfile_3\n");
 
         Ok(())
@@ -137,8 +163,7 @@ fn creating_duplicate_files() -> ResultBtAny<()> {
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_1\nfile_2\n");
 
         Ok(())
@@ -159,8 +184,7 @@ fn creating_tags() -> ResultBtAny<()> {
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "tag_1\ntag_2\ntag_3\n");
 
         Ok(())
@@ -184,8 +208,7 @@ fn creating_duplicate_tags() -> ResultBtAny<()> {
             .run_and_log()
             .expect_err("To have already created `tag_2`.");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "tag_1\ntag_2\n");
 
         Ok(())
@@ -199,7 +222,8 @@ fn writing_and_reading_to_files() -> ResultBtAny<()> {
     setup_tracing();
 
     with_tfs_mount(|mount_directory| {
-        let output = cmd("touch").arg(mount_directory.join("{}").join("file_1"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{}").join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "");
 
@@ -207,12 +231,14 @@ fn writing_and_reading_to_files() -> ResultBtAny<()> {
             .write(true)
             .truncate(true)
             .open(mount_directory.join("{}").join("file_1"))?;
-        let output = cmd("echo").arg("abcdefghij")
+        let output = cmd("echo")
+            .arg("abcdefghij")
             .stdout(echo_into)
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("cat").arg(mount_directory.join("{}").join("file_1"))
+        let output = cmd("cat")
+            .arg(mount_directory.join("{}").join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "abcdefghij\n");
 
@@ -233,12 +259,12 @@ fn removing_file() -> ResultBtAny<()> {
             .arg(mount_directory.join("file_3"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("rm").arg(mount_directory.join("file_2"))
+        let output = cmd("rm")
+            .arg(mount_directory.join("file_2"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_1\nfile_3\n");
 
         Ok(())
@@ -258,12 +284,12 @@ fn removing_nonexistent_file() -> ResultBtAny<()> {
             .arg(mount_directory.join("file_3"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("rm").arg(mount_directory.join("file_4"))
+        let output = cmd("rm")
+            .arg(mount_directory.join("file_4"))
             .run_and_log()
             .expect_err("To not have created `file_4`.");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_1\nfile_2\nfile_3\n");
 
         Ok(())
@@ -283,12 +309,12 @@ fn removing_tags() -> ResultBtAny<()> {
             .arg(mount_directory.join("tag_3"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("rmdir").arg(mount_directory.join("tag_2"))
+        let output = cmd("rmdir")
+            .arg(mount_directory.join("tag_2"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "tag_1\ntag_3\n");
 
         Ok(())
@@ -308,12 +334,12 @@ fn removing_nonexistent_tag() -> ResultBtAny<()> {
             .arg(mount_directory.join("tag_3"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("rmdir").arg(mount_directory.join("tag_4"))
+        let output = cmd("rmdir")
+            .arg(mount_directory.join("tag_4"))
             .run_and_log()
             .expect_err("To not have created `tag_4`.");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "tag_1\ntag_2\ntag_3\n");
 
         Ok(())
@@ -333,66 +359,68 @@ fn doing_random_chained_interactions() -> ResultBtAny<()> {
             .arg(mount_directory.join("tag_3"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("rmdir").arg(mount_directory.join("tag_2"))
+        let output = cmd("rmdir")
+            .arg(mount_directory.join("tag_2"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("touch").arg(mount_directory.join("{ tag_1 }").join("file_1"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_1 }").join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("touch").arg(mount_directory.join("file_2"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("file_2"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_1 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_1 }"))
             .run_and_log()?;
         assert_eq!(output, "file_1\ntag_1\n");
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_1\ntag_3\n");
 
-        let output = cmd("mkdir").arg(mount_directory.join("tag_4"))
+        let output = cmd("mkdir")
+            .arg(mount_directory.join("tag_4"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_1\ntag_3\ntag_4\n");
 
-        let output = cmd("rmdir").arg(mount_directory.join("tag_4"))
+        let output = cmd("rmdir")
+            .arg(mount_directory.join("tag_4"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_1\ntag_3\n");
 
-        let output = cmd("rmdir").arg(mount_directory.join("tag_1"))
+        let output = cmd("rmdir")
+            .arg(mount_directory.join("tag_1"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_1\nfile_2\ntag_3\n");
 
-        let output = cmd("rm").arg(mount_directory.join("{}").join("file_1"))
+        let output = cmd("rm")
+            .arg(mount_directory.join("{}").join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_3\n");
 
-        let output = cmd("touch").arg(mount_directory.join("{ tag_3 }").join("file_4"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_3 }").join("file_4"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_3\n");
         let original_directory = current_dir()?;
         set_current_dir(mount_directory.join("{ tag_3 }"));
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_3\n");
         set_current_dir(&original_directory);
 
@@ -402,33 +430,40 @@ fn doing_random_chained_interactions() -> ResultBtAny<()> {
             .arg(mount_directory.join("tag_6"))
             .run_and_log()?;
         assert_eq!(output, "");
-        let output = cmd("touch").arg(mount_directory.join("{ tag_3, tag_4 }").join("file_1"))
+        let output = cmd("touch")
+            .arg(mount_directory.join("{ tag_3, tag_4 }").join("file_1"))
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_3\ntag_4\ntag_5\ntag_6\n");
-        let output = cmd("ls").arg(mount_directory.join("{ tag_3 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_3 }"))
             .run_and_log()?;
         assert_eq!(output, "file_4\ntag_3\ntag_4\n");
-        let output = cmd("ls").arg(mount_directory.join("{ tag_3, tag_4 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_3, tag_4 }"))
             .run_and_log()?;
         assert_eq!(output, "file_1\ntag_3\ntag_4\n");
-        let output = cmd("ls").arg(mount_directory.join("{}"))
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory.join("{}")).run_and_log()?;
         assert_eq!(output, "file_2\ntag_3\ntag_4\n");
 
         let output = cmd("mv")
             .arg(mount_directory.join("{ tag_3, tag_4 }").join("file_1"))
-            .arg(mount_directory.join("{ tag_3, tag_4, tag_5 }").join("file_1"))
+            .arg(
+                mount_directory
+                    .join("{ tag_3, tag_4, tag_5 }")
+                    .join("file_1"),
+            )
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory.join("{ tag_3, tag_4 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_3, tag_4 }"))
             .run_and_log()?;
         assert_eq!(output, "tag_3\ntag_4\ntag_5\n");
-        let output = cmd("ls").arg(mount_directory.join("{ tag_3, tag_4, tag_5 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_3, tag_4, tag_5 }"))
             .run_and_log()?;
         assert_eq!(output, "file_1\ntag_3\ntag_4\ntag_5\n");
 
@@ -438,16 +473,18 @@ fn doing_random_chained_interactions() -> ResultBtAny<()> {
             .run_and_log()?;
         assert_eq!(output, "");
 
-        let output = cmd("ls").arg(mount_directory)
-            .run_and_log()?;
+        let output = cmd("ls").arg(mount_directory).run_and_log()?;
         assert_eq!(output, "file_2\ntag_3\ntag_44\ntag_5\ntag_6\n");
-        let output = cmd("ls").arg(mount_directory.join("{ tag_3, tag_44, tag_5 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_3, tag_44, tag_5 }"))
             .run_and_log()?;
         assert_eq!(output, "file_1\ntag_3\ntag_44\ntag_5\n");
-        cmd("ls").arg(mount_directory.join("{ tag_3, tag_4, tag_5 }"))
+        cmd("ls")
+            .arg(mount_directory.join("{ tag_3, tag_4, tag_5 }"))
             .run_and_log()
             .expect_err("No file with such tags.");
-        let output = cmd("ls").arg(mount_directory.join("{ tag_3, tag_44, tag_5 }"))
+        let output = cmd("ls")
+            .arg(mount_directory.join("{ tag_3, tag_44, tag_5 }"))
             .run_and_log()?;
         assert_eq!(output, "file_1\ntag_3\ntag_44\ntag_5\n");
 
@@ -463,11 +500,11 @@ trait CommandExt {
 
 impl CommandExt for Command {
     fn run_and_log(&mut self) -> ResultBtAny<String> {
-        println!("> {} {}", 
+        println!(
+            "> {} {}",
             self.get_program().to_string_lossy(),
-            VecWrapper(self.get_args()
-                .map(|arg| arg.to_string_lossy())
-                .collect()));
+            VecWrapper(self.get_args().map(|arg| arg.to_string_lossy()).collect())
+        );
         self.stderr(stdout());
         let command_output = self.output()?;
         let stdout_stderr = str::from_utf8(&command_output.stdout)
@@ -476,10 +513,7 @@ impl CommandExt for Command {
         print!("{}", stdout_stderr);
         let output_status = command_output.status;
         if !output_status.success() {
-            return Err(format!(
-                "Exitted with code `{:?}`",
-                output_status.code())
-                .into());
+            return Err(format!("Exitted with code `{:?}`", output_status.code()).into());
         }
         Ok(stdout_stderr)
     }
