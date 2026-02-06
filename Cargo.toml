@@ -3,13 +3,13 @@ name = "tag_filesystem"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "tfs"
-path = "src/main.rs"
-
 [lib]
 name = "tag_filesystem"
 path = "src/lib.rs"
+
+[[bin]]
+name = "tfs"
+path = "src/main.rs"
 
 [dependencies]
 askama = "0.14.0"
