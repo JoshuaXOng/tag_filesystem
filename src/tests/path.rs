@@ -4,7 +4,7 @@ use crate::{errors::ResultBtAny, path::PathBufExt};
 
 #[test]
 fn modifying_path_string() -> ResultBtAny<()> {
-    let mut path = PathBuf::new().join("/tmp").join("tfs");
+    let mut path = PathBuf::from("/tmp").join("tfs");
 
     path = path.join("{}");
     assert_eq!(path.to_string_lossy(), "/tmp/tfs/{}");

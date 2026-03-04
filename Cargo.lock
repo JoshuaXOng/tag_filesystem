@@ -174,6 +174,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt_error"
+version = "0.1.0"
+source = "git+https://github.com/JoshuaXOng/bt_error.git?tag=v0.1.0#cd53414a208ac8f04652a900e5ab6ccf7ecb2cfb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -416,7 +429,6 @@ dependencies = [
  "quote",
  "syn",
  "tracing",
- "tracing-subscriber",
  "tracing-test",
 ]
 
@@ -1127,6 +1139,7 @@ version = "0.1.0"
 dependencies = [
  "askama",
  "bon",
+ "bt_error",
  "capnp",
  "capnpc",
  "clap",

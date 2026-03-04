@@ -4,8 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use bt_error::Backtrace;
 use derive_more::{Display, Error};
-use drums::Backtrace;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{info, instrument};

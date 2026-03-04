@@ -58,7 +58,7 @@ fn parsing_changing_tags() {
         }
     );
 
-    let mut path = PathBuf::new().join("/tmp/ct/{ tag_8, tag_2 }");
+    let mut path = PathBuf::from("/tmp/ct/{ tag_8, tag_2 }");
     println!("{:?}", path);
 
     let tags = change_arguments.tags;
