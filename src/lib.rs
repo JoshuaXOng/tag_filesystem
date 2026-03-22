@@ -16,7 +16,6 @@ pub mod files;
 pub mod filesystem;
 pub mod fuse;
 pub mod inodes;
-pub mod journal;
 pub mod namespaces;
 pub mod os;
 pub mod path;

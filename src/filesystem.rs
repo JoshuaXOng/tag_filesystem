@@ -20,7 +20,6 @@ use crate::{
     errors::{AnyError, ResultBtAny, collect_errors},
     files::{IndexedFiles, TfsFile},
     inodes::{FileInode, NamespaceInode, TagInode, TagInodes},
-    journal::TfsJournal,
     namespaces::{IndexedNamepsaces, TfsNamespace},
     os::{COMMON_BLOCK_SIZE, NO_RDEV},
     path::{format_tags, parse_tags},
@@ -47,7 +46,6 @@ where
     namespaces: IndexedNamepsaces,
     storage: Storage,
     snapshots: Snapshots,
-    journal: TfsJournal,
 }
 
 impl TagFilesystem {
@@ -88,7 +86,6 @@ impl TagFilesystem {
             namespaces: IndexedNamepsaces::new(),
             storage: DelegateStorage::try_new(mount_path)?,
             snapshots: filesystem_snapshots,
-            journal: TfsJournal::new(),
         })
     }
 
@@ -738,7 +735,6 @@ impl TagFilesystem<StubStorage, StubSnapshots> {
             namespaces: IndexedNamepsaces::new(),
             storage: StubStorage,
             snapshots: StubSnapshots,
-            journal: TfsJournal::new(),
         }
     }
 }
